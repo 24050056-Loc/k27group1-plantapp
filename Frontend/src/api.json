@@ -1,5 +1,5 @@
 {
-  "baseUrl": "http://localhost:8080",
+  "baseUrl": "http://192.168.190.13:8080",
   "tokenStorageKey": "token",
   "defaultHeaders": {
     "Content-Type": "application/json"

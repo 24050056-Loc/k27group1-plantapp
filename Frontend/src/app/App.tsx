@@ -11,6 +11,7 @@ import {
   Dimensions
 } from "react-native";
 import { HomeScreen, MallScreen, ExploreScreen, EventScreen, ProfileScreen } from "./(tabs)";
+import SplashScreen from "./(auth)/splash";
 import LoginScreen from "./(auth)/login";
 import RegisterScreen from "./(auth)/register";
 import CartScreen from "./(cart)/Cart";
@@ -25,6 +26,9 @@ import {
   User as UserIcon,
   ShoppingBag as ShoppingBagIcon,
 } from "lucide-react-native";
+import { AuthProvider, useAuth } from "../context/AuthContext";
+import { QueryProvider } from "./QueryProvider";
+import { Product } from "../types";
 
 const windowSize = Dimensions.get("window");
 const screenSize = Dimensions.get("screen");
@@ -45,6 +49,7 @@ const TAB_ITEMS = [
 
 type TabKey = (typeof TAB_ITEMS)[number]["key"];
 type ScreenKey =
+  | "splash"
   | "login"
   | "register"
   | "home"
@@ -59,8 +64,21 @@ type ScreenKey =
   | "productDetail";
 
 export default function App() {
-  const [screen, setScreen] = useState<ScreenKey>("login");
+  return (
+    <QueryProvider>
+      <AuthProvider>
+        <AppContent />
+      </AuthProvider>
+    </QueryProvider>
+  );
+}
+
+function AppContent() {
+  const { token, logout } = useAuth();
+  const [screen, setScreen] = useState<ScreenKey>("splash");
   const [activeTab, setActiveTab] = useState<TabKey>("home");
+  const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [activeOrderId, setActiveOrderId] = useState<number | null>(null);
 
   const goToMain = () => {
     setActiveTab("home");
@@ -69,34 +87,55 @@ export default function App() {
 
   const goToAuth = (screenName: "login" | "register") => setScreen(screenName);
 
+  const handleSelectProduct = (product: Product, fromScreen: ScreenKey) => {
+    setSelectedProduct(product);
+    setScreen("productDetail");
+  };
+
+  const handleCheckoutSuccess = (orderId: number) => {
+    setActiveOrderId(orderId);
+    setScreen("checkout"); // Vẫn ở checkout nhưng sẽ dẫn tới COD hoặc QR
+  };
+
+  const handleLogout = () => {
+    logout();
+    setScreen("login");
+  };
+
   const renderMainContent = () => {
     switch (screen) {
       case "home":
-        return <HomeScreen />;
+        return <HomeScreen onSelectProduct={(p) => handleSelectProduct(p, "home")} />;
       case "mall":
-        return <MallScreen />;
+        return <MallScreen onSelectProduct={(p) => handleSelectProduct(p, "mall")} />;
       case "explore":
         return <ExploreScreen />;
       case "event":
         return <EventScreen />;
       case "profile":
-        return <ProfileScreen />;
+        return <ProfileScreen onLogout={handleLogout} />;
       case "cart":
         return <CartScreen onBack={() => setScreen("mall")} onCheckout={() => setScreen("checkout")} />;
       case "checkout":
         return (
           <CheckoutScreen
             onBack={() => setScreen("cart")}
+            onCheckoutSuccess={handleCheckoutSuccess}
             onChooseCOD={() => setScreen("paymentCOD")}
             onChooseQR={() => setScreen("paymentQR")}
           />
         );
       case "paymentCOD":
-        return <PaymentCODScreen onBack={() => setScreen("checkout")} />;
+        return <PaymentCODScreen orderId={activeOrderId} onBack={goToMain} />;
       case "paymentQR":
-        return <PaymentQRScreen onBack={() => setScreen("checkout")} />;
+        return <PaymentQRScreen orderId={activeOrderId} onBack={goToMain} />;
       case "productDetail":
-        return <ProductDetailScreen onBack={() => setScreen("home")} />;
+        return (
+          <ProductDetailScreen
+            product={selectedProduct}
+            onBack={() => setScreen(activeTab)}
+          />
+        );
       default:
         return null;
     }
@@ -107,6 +146,9 @@ export default function App() {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+      {screen === "splash" && (
+        <SplashScreen onFinish={() => setScreen("login")} />
+      )}
       {screen === "login" && (
         <LoginScreen onLogin={goToMain} onGoRegister={() => goToAuth("register")} />
       )}
@@ -118,27 +160,31 @@ export default function App() {
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
             {renderMainContent()}
           </ScrollView>
-          <View style={styles.bottomTabBar}>
-            {TAB_ITEMS.map((tab) => {
-              const IconComponent = tab.icon;
-              const isFocused = activeTab === tab.key && screen === tab.key;
-              return (
-                <TouchableOpacity
-                  key={tab.key}
-                  onPress={() => {
-                    setActiveTab(tab.key);
-                    setScreen(tab.key);
-                  }}
-                  style={styles.tabItem}
-                >
-                  <IconComponent size={22} stroke={isFocused ? "#2E7D32" : "#888888"} />
-                  <Text style={[styles.tabLabel, { color: isFocused ? "#2E7D32" : "#888888", fontWeight: isFocused ? "700" : "400" }]}>
-                    {tab.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
+          
+          {/* Chỉ hiển thị Bottom Tab nếu không ở các màn hình phụ như ProductDetail, Cart, Checkout, Payment */}
+          {["home", "mall", "explore", "event", "profile"].includes(screen) && (
+            <View style={styles.bottomTabBar}>
+              {TAB_ITEMS.map((tab) => {
+                const IconComponent = tab.icon;
+                const isFocused = activeTab === tab.key && screen === tab.key;
+                return (
+                  <TouchableOpacity
+                    key={tab.key}
+                    onPress={() => {
+                      setActiveTab(tab.key);
+                      setScreen(tab.key);
+                    }}
+                    style={styles.tabItem}
+                  >
+                    <IconComponent size={22} stroke={isFocused ? "#2E7D32" : "#888888"} />
+                    <Text style={[styles.tabLabel, { color: isFocused ? "#2E7D32" : "#888888", fontWeight: isFocused ? "700" : "400" }]}>
+                      {tab.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
         </>
       )}
     </SafeAreaView>
@@ -149,6 +195,10 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#ffffff" },
   scrollContent: { paddingBottom: SCROLL_BOTTOM_PADDING },
   bottomTabBar: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
     height: BOTTOM_TAB_HEIGHT + ANDROID_BOTTOM_INSET,
     paddingBottom: ANDROID_BOTTOM_INSET,
     borderTopWidth: 1,
