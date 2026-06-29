@@ -4,7 +4,7 @@ import { Bell, Search, SlidersHorizontal, Plus } from "lucide-react-native";
 import { getFeaturedProducts } from "../../services/productService";
 import { getCategories } from "../../services/categoryService";
 import { Product, Category } from "../../types";
-import { baseUrl } from "../../api";
+import { resolveProductImage } from "../../assets/productImages";
 
 const BANNERS = [
   {
@@ -44,11 +44,9 @@ export default function HomeScreen({ onSelectProduct }: Props) {
     loadData();
   }, []);
 
-  // Chuyển đổi đường dẫn ảnh tĩnh của backend sang URL hoàn chỉnh
-  const getProductImageUrl = (urlPath: string | null | undefined) => {
-    if (!urlPath) return "https://images.unsplash.com/photo-1501004318641-b39e6451bec6?w=300&fit=crop";
-    if (urlPath.startsWith("http")) return urlPath;
-    return `${baseUrl}/${urlPath}`;
+  // Dùng helper để hổ trợ ảnh local (assets/products) hoặc remote
+  const getProductImageSource = (urlPath: string | null | undefined) => {
+    return resolveProductImage(urlPath);
   };
 
   // Map icon danh mục tùy theo tên
@@ -121,7 +119,7 @@ export default function HomeScreen({ onSelectProduct }: Props) {
               style={styles.productCard}
               onPress={() => onSelectProduct(product)}
             >
-              <Image source={{ uri: getProductImageUrl(product.hinh_anh_url) }} style={styles.productImage} />
+              <Image source={getProductImageSource(product.hinh_anh_url)} style={styles.productImage} />
               <Text style={styles.productName} numberOfLines={1}>{product.ten_san_pham}</Text>
               <View style={styles.productFooter}>
                 <Text style={styles.productPrice}>{parseFloat(product.gia_tien).toLocaleString('vi-VN')}đ</Text>

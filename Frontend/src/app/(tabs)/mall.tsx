@@ -4,7 +4,7 @@ import { Search, Plus } from "lucide-react-native";
 import { getProducts } from "../../services/productService";
 import { addToCart } from "../../services/cartService";
 import { Product } from "../../types";
-import { baseUrl } from "../../api";
+import { resolveProductImage } from "../../assets/productImages";
 import { useAuth } from "../../context/AuthContext";
 
 type Props = {
@@ -67,10 +67,8 @@ export default function MallScreen({ onSelectProduct }: Props) {
     }
   };
 
-  const getProductImageUrl = (urlPath: string | null | undefined) => {
-    if (!urlPath) return "https://images.unsplash.com/photo-1501004318641-b39e6451bec6?w=300&fit=crop";
-    if (urlPath.startsWith("http")) return urlPath;
-    return `${baseUrl}/${urlPath}`;
+  const getProductImageSource = (urlPath: string | null | undefined) => {
+    return resolveProductImage(urlPath);
   };
 
   return (
@@ -102,7 +100,7 @@ export default function MallScreen({ onSelectProduct }: Props) {
               style={styles.productCard}
               onPress={() => onSelectProduct(item)}
             >
-              <Image source={{ uri: getProductImageUrl(item.hinh_anh_url) }} style={styles.productImage} />
+              <Image source={getProductImageSource(item.hinh_anh_url)} style={styles.productImage} />
               <Text style={styles.productName} numberOfLines={1}>{item.ten_san_pham}</Text>
               {item.ten_khoa_hoc ? <Text style={styles.scientificName} numberOfLines={1}>{item.ten_khoa_hoc}</Text> : null}
               <View style={styles.productFooter}>

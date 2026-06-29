@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { View, Text, Image, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, Alert } from "react-native";
 import { Product } from "../../types";
-import { baseUrl } from "../../api";
+import { resolveProductImage } from "../../assets/productImages";
 import { useAuth } from "../../context/AuthContext";
 import { addToCart } from "../../services/cartService";
 
@@ -25,10 +25,8 @@ export default function ProductDetailScreen({ product, onBack }: Props) {
     );
   }
 
-  const getProductImageUrl = (urlPath: string | null | undefined) => {
-    if (!urlPath) return "https://images.unsplash.com/photo-1501004318641-b39e6451bec6?w=600&fit=crop";
-    if (urlPath.startsWith("http")) return urlPath;
-    return `${baseUrl}/${urlPath}`;
+  const getProductImageSource = (urlPath: string | null | undefined) => {
+    return resolveProductImage(urlPath);
   };
 
   const handleAddToCart = async () => {
@@ -57,7 +55,7 @@ export default function ProductDetailScreen({ product, onBack }: Props) {
       <TouchableOpacity onPress={onBack} style={styles.backButton}>
         <Text style={styles.backText}>&larr; Quay lại</Text>
       </TouchableOpacity>
-      <Image source={{ uri: getProductImageUrl(product.hinh_anh_url) }} style={styles.image} />
+      <Image source={getProductImageSource(product.hinh_anh_url)} style={styles.image} />
       <Text style={styles.title}>{product.ten_san_pham}</Text>
       {product.ten_khoa_hoc ? <Text style={styles.scientificName}>{product.ten_khoa_hoc}</Text> : null}
       <Text style={styles.price}>{parseFloat(product.gia_tien).toLocaleString('vi-VN')}đ</Text>
