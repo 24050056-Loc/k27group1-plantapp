@@ -1,19 +1,21 @@
 import React, { useEffect, useState } from "react";
 import { View, Text, StyleSheet, Image, TouchableOpacity, TextInput, FlatList, ActivityIndicator, Alert } from "react-native";
-import { Search, Plus } from "lucide-react-native";
+import { Search, Plus, ShoppingCart } from "lucide-react-native";
 import { getProducts } from "../../services/productService";
-import { addToCart } from "../../services/cartService";
+import { addToCart, getCart } from "../../services/cartService";
 import { Product } from "../../types";
 import { resolveProductImage } from "../../assets/productImages";
 import { useAuth } from "../../context/AuthContext";
 
 type Props = {
   onSelectProduct: (product: Product) => void;
+  onOpenCart?: () => void;
 };
 
-export default function MallScreen({ onSelectProduct }: Props) {
+export default function MallScreen({ onSelectProduct, onOpenCart }: Props) {
   const { token } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
+  const [cartCount, setCartCount] = useState<number>(0);
   const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
@@ -25,6 +27,19 @@ export default function MallScreen({ onSelectProduct }: Props) {
         const prodList = await getProducts();
         setProducts(prodList);
         setFilteredProducts(prodList);
+        // fetch cart count if logged in
+        if (token) {
+          try {
+            const items = await getCart(token);
+            setCartCount(items.reduce((s, it) => s + it.so_luong, 0));
+          } catch (err: any) {
+            if (err.response?.status === 403 || err.response?.status === 401) {
+              setCartCount(0);
+            } else {
+              console.error("Lỗi khi lấy giỏ hàng (badge):", err);
+            }
+          }
+        }
       } catch (err) {
         console.error("Lỗi khi tải sản phẩm tại Mall:", err);
       } finally {
@@ -32,7 +47,7 @@ export default function MallScreen({ onSelectProduct }: Props) {
       }
     }
     loadProducts();
-  }, []);
+  }, [token]);
 
   const handleSearch = (text: string) => {
     setSearch(text);
@@ -57,6 +72,8 @@ export default function MallScreen({ onSelectProduct }: Props) {
       const result = await addToCart(token, product.id, 1);
       if (result.success) {
         Alert.alert("Thành công", `Đã thêm "${product.ten_san_pham}" vào giỏ!`);
+        // Update badge count locally
+        setCartCount((c) => c + 1);
       } else {
         Alert.alert("Thất bại", result.message || "Không thể thêm sản phẩm.");
       }
@@ -73,7 +90,17 @@ export default function MallScreen({ onSelectProduct }: Props) {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Cửa hàng 🌿</Text>
+      <View style={styles.headerRow}>
+        <Text style={styles.title}>Cửa hàng 🌿</Text>
+        <TouchableOpacity style={styles.cartButton} onPress={() => onOpenCart && onOpenCart()}>
+          <ShoppingCart size={20} stroke="#1A2E1A" />
+          {cartCount > 0 && (
+            <View style={styles.cartBadge}>
+              <Text style={styles.cartBadgeText}>{cartCount}</Text>
+            </View>
+          )}
+        </TouchableOpacity>
+      </View>
 
       <View style={styles.searchRow}>
         <Search size={18} stroke="#666" style={styles.searchIcon} />
@@ -134,7 +161,11 @@ const styles = StyleSheet.create({
   searchRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#f5f5f5", borderRadius: 16, paddingHorizontal: 12, height: 48, marginBottom: 20 },
   searchIcon: { marginRight: 8 },
   searchInput: { flex: 1, fontSize: 14, color: "#333" },
+  headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
+  cartButton: { width: 44, height: 44, backgroundColor: "#f5f5f5", borderRadius: 12, alignItems: "center", justifyContent: "center" },
   rowWrapper: { justifyContent: "space-between" },
+  cartBadge: { position: "absolute", top: -6, right: -6, minWidth: 18, height: 18, borderRadius: 9, backgroundColor: "#d32f2f", alignItems: "center", justifyContent: "center", paddingHorizontal: 4 },
+  cartBadgeText: { color: "#fff", fontSize: 11, fontWeight: "700" },
   productCard: { width: "48%", backgroundColor: "#fff", borderRadius: 20, padding: 12, borderWidth: 1, borderColor: "#eee", marginBottom: 16 },
   productImage: { width: "100%", height: 112, borderRadius: 16, backgroundColor: "#f9f9f9" },
   productName: { marginTop: 10, fontSize: 13, fontWeight: "600", color: "#333" },

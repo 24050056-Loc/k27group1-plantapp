@@ -107,7 +107,7 @@ function AppContent() {
       case "home":
         return <HomeScreen onSelectProduct={(p) => handleSelectProduct(p, "home")} />;
       case "mall":
-        return <MallScreen onSelectProduct={(p) => handleSelectProduct(p, "mall")} />;
+        return <MallScreen onSelectProduct={(p) => handleSelectProduct(p, "mall")} onOpenCart={() => setScreen("cart")} />;
       case "explore":
         return <ExploreScreen />;
       case "event":

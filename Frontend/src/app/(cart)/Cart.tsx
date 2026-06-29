@@ -16,12 +16,19 @@ export default function CartScreen({ onBack, onCheckout }: Props) {
 
   useEffect(() => {
     async function loadCart() {
-      if (!token) return;
+      if (!token) {
+        setLoading(false);
+        return;
+      }
       try {
         const items = await getCart(token);
         setCartItems(items);
-      } catch (err) {
-        console.error("Lỗi khi lấy giỏ hàng:", err);
+      } catch (err: any) {
+        if (err.response?.status === 403 || err.response?.status === 401) {
+          setCartItems([]);
+        } else {
+          console.error("Lỗi khi lấy giỏ hàng:", err);
+        }
       } finally {
         setLoading(false);
       }
