@@ -1,0 +1,16 @@
+{
+  "baseUrl": "http://localhost:8080",
+  "tokenStorageKey": "token",
+  "defaultHeaders": {
+    "Content-Type": "application/json"
+  },
+  "endpoints": {
+    "authLogin": "/auth/login",
+    "authRegister": "/auth/register",
+    "categories": "/categories",
+    "products": "/product",
+    "featuredProducts": "/product/featured",
+    "orders": "/order",
+    "users": "/users"
+  }
+}
