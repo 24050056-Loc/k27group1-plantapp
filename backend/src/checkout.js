@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('./db.js');
-const authenticateToken = require('./middlewares/authMiddleware');
+const authenticateToken = require('./middlewares/authMiddleware.js');
 
 router.post('/', authenticateToken, async (req, res) => {
     // 1. Kiểm tra input cơ bản trước khi mở connection để tiết kiệm tài nguyên
@@ -11,7 +11,7 @@ router.post('/', authenticateToken, async (req, res) => {
     }
 
     const userId = req.user.id;
-    const connection = await pool.getConnection(); 
+    const connection = await pool.getConnection();
 
     try {
         await connection.beginTransaction();
@@ -22,7 +22,7 @@ router.post('/', authenticateToken, async (req, res) => {
             `SELECT c.product_id, c.so_luong, p.gia_tien, p.so_luong_kho, p.ten_san_pham 
              FROM cart c 
              JOIN products p ON c.product_id = p.id 
-             WHERE c.user_id = ? FOR UPDATE`, 
+             WHERE c.user_id = ? FOR UPDATE`,
             [userId]
         );
 
@@ -53,7 +53,7 @@ router.post('/', authenticateToken, async (req, res) => {
         for (let item of cartItems) {
             // Cập nhật kho từng sản phẩm (đã được LOCK an toàn bằng FOR UPDATE phía trên)
             await connection.execute(
-                `UPDATE products SET so_luong_kho = so_luong_kho - ? WHERE id = ?`, 
+                `UPDATE products SET so_luong_kho = so_luong_kho - ? WHERE id = ?`,
                 [item.so_luong, item.product_id]
             );
 
@@ -73,12 +73,12 @@ router.post('/', authenticateToken, async (req, res) => {
         await connection.execute(`DELETE FROM cart WHERE user_id = ?`, [userId]);
 
         // Hoàn tất transaction thành công
-        await connection.commit(); 
+        await connection.commit();
         res.json({ success: true, message: "Đặt hàng thành công!", order_id: orderId });
 
     } catch (error) {
         // Hoàn tác nếu có bất kỳ lỗi nào xảy ra
-        await connection.rollback(); 
+        await connection.rollback();
         res.status(400).json({ success: false, message: error.message });
     } finally {
         // Luôn giải phóng connection trả lại cho pool

@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('./db.js');
-const authenticateToken = require('./middlewares/authMiddleware');
+const authenticateToken = require('./middlewares/authMiddleware.js');
 
 // 1. Lấy danh sách giỏ hàng
 router.get('/', authenticateToken, async (req, res) => {
@@ -35,7 +35,7 @@ router.post('/', authenticateToken, async (req, res) => {
 
         // --- BƯỚC 2: KIỂM TRA SẢN PHẨM & KHO ---
         const [products] = await pool.execute(
-            'SELECT id, so_luong_kho, ten_san_pham FROM products WHERE id = ?', 
+            'SELECT id, so_luong_kho, ten_san_pham FROM products WHERE id = ?',
             [product_id]
         );
 
@@ -47,7 +47,7 @@ router.post('/', authenticateToken, async (req, res) => {
 
         // --- BƯỚC 3: KIỂM TRA XEM SẢN PHẨM ĐÃ CÓ TRONG GIỎ CHƯA ---
         const [existing] = await pool.execute(
-            'SELECT so_luong FROM cart WHERE user_id = ? AND product_id = ?', 
+            'SELECT so_luong FROM cart WHERE user_id = ? AND product_id = ?',
             [userId, product_id]
         );
 
@@ -58,9 +58,9 @@ router.post('/', authenticateToken, async (req, res) => {
 
         // --- BƯỚC 4: CHECK XEM TỔNG SỐ LƯỢNG CÓ VƯỢT QUÁ KHO KHÔNG ---
         if (so_luong_moi > product.so_luong_kho) {
-            return res.status(400).json({ 
-                success: false, 
-                message: `Không thể thêm! Trong kho chỉ còn ${product.so_luong_kho} sản phẩm, giỏ hàng của bạn đang có ${existing.length > 0 ? existing[0].so_luong : 0} sản phẩm.` 
+            return res.status(400).json({
+                success: false,
+                message: `Không thể thêm! Trong kho chỉ còn ${product.so_luong_kho} sản phẩm, giỏ hàng của bạn đang có ${existing.length > 0 ? existing[0].so_luong : 0} sản phẩm.`
             });
         }
 
@@ -68,13 +68,13 @@ router.post('/', authenticateToken, async (req, res) => {
         if (existing.length > 0) {
             // Có rồi thì cập nhật tổng số lượng mới
             await pool.execute(
-                'UPDATE cart SET so_luong = ? WHERE user_id = ? AND product_id = ?', 
+                'UPDATE cart SET so_luong = ? WHERE user_id = ? AND product_id = ?',
                 [so_luong_moi, userId, product_id]
             );
         } else {
             // Chưa có thì tạo mới
             await pool.execute(
-                'INSERT INTO cart (user_id, product_id, so_luong) VALUES (?, ?, ?)', 
+                'INSERT INTO cart (user_id, product_id, so_luong) VALUES (?, ?, ?)',
                 [userId, product_id, so_luong]
             );
         }

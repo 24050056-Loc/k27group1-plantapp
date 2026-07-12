@@ -1,8 +1,8 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('./db.js');
-const usersController = require('./Controller/usersController');
-const authenticateToken = require('./middlewares/authMiddleware');
+const usersController = require('./Controller/usersController.js');
+const authenticateToken = require('./middlewares/authMiddleware.js');
 
 // ==========================================
 // 1. API XÁC THỰC (AUTH)
@@ -126,13 +126,13 @@ router.put('/:userId/orders/:orderId/pay', authenticateToken, async (req, res) =
         }
 
         if (ho_ten || so_dien_thoai) {
-             const updateUser = `
+            const updateUser = `
                 UPDATE users 
                 SET ho_ten = COALESCE(?, ho_ten),
                     so_dien_thoai = COALESCE(?, so_dien_thoai)
                 WHERE id = ?
              `;
-             await pool.execute(updateUser, [ho_ten || null, so_dien_thoai || null, userId]);
+            await pool.execute(updateUser, [ho_ten || null, so_dien_thoai || null, userId]);
         }
 
         res.json({ success: true, message: 'Xác nhận thanh toán thành công' });

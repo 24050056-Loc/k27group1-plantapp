@@ -1,4 +1,4 @@
-const userModel = require('../model/usersModel');
+const userModel = require('../model/usersModel.js');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const pool = require('../db.js');
@@ -52,7 +52,7 @@ const login = async (req, res) => {
 
         // 2. Tìm user trong Database theo tên đăng nhập
         const users = await userModel.findByUsername(username);
-        
+
         // BƯỚC SỬA LỖI: Kiểm tra xem user có tồn tại trong hệ thống hay không
         if (!user) {
             return res.status(401).json({ message: "Tài khoản hoặc mật khẩu không chính xác!" });
