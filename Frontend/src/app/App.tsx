@@ -63,6 +63,13 @@ type ScreenKey =
   | "paymentQR"
   | "productDetail";
 
+// ==========================================
+// 🛠️ DEV CONFIG (Dễ dàng bật/tắt hoặc xóa đi khi hoàn thành dự án)
+// ==========================================
+const DEV_MODE = true; // Bật true để tự động đăng nhập & vào thẳng màn hình test
+const DEV_INITIAL_SCREEN: ScreenKey = "home"; // Màn hình muốn test: "home" | "cart" | "mall" | "profile"
+// ==========================================
+
 export default function App() {
   return (
     <QueryProvider>
@@ -74,11 +81,28 @@ export default function App() {
 }
 
 function AppContent() {
-  const { token, logout } = useAuth();
-  const [screen, setScreen] = useState<ScreenKey>("splash");
-  const [activeTab, setActiveTab] = useState<TabKey>("home");
+  const { token, login, logout } = useAuth();
+  const [screen, setScreen] = useState<ScreenKey>(DEV_MODE ? DEV_INITIAL_SCREEN : "splash");
+  const [activeTab, setActiveTab] = useState<TabKey>(
+    DEV_MODE && ["home", "mall", "explore", "event", "profile"].includes(DEV_INITIAL_SCREEN)
+      ? (DEV_INITIAL_SCREEN as TabKey)
+      : "home"
+  );
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [activeOrderId, setActiveOrderId] = useState<number | null>(null);
+
+  // Auto-login giả lập cho FE khi bật DEV_MODE
+  React.useEffect(() => {
+    if (DEV_MODE && !token) {
+      login("dev-bypass-token-12345", {
+        id: 999,
+        ten_dang_nhap: "developer",
+        email: "dev@plantapp.com",
+        ho_ten: "Developer Mode User",
+        vai_tro: "USER",
+      });
+    }
+  }, [token]);
 
   const goToMain = () => {
     setActiveTab("home");
@@ -107,7 +131,7 @@ function AppContent() {
       case "home":
         return <HomeScreen onSelectProduct={(p) => handleSelectProduct(p, "home")} />;
       case "mall":
-        return <MallScreen onSelectProduct={(p) => handleSelectProduct(p, "mall")} />;
+        return <MallScreen onSelectProduct={(p) => handleSelectProduct(p, "mall")} onOpenCart={() => setScreen("cart")} />;
       case "explore":
         return <ExploreScreen />;
       case "event":
@@ -143,6 +167,9 @@ function AppContent() {
 
   const isMainScreen = ["home", "mall", "explore", "event", "profile", "cart", "checkout", "paymentCOD", "paymentQR", "productDetail"].includes(screen);
 
+  // Màn hình tự quản lý scroll riêng — không cần ScrollView bọc ngoài
+  const isFullscreenScreen = ["cart", "checkout", "paymentCOD", "paymentQR", "productDetail"].includes(screen);
+
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
@@ -157,9 +184,16 @@ function AppContent() {
       )}
       {isMainScreen && (
         <>
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-            {renderMainContent()}
-          </ScrollView>
+          {isFullscreenScreen ? (
+            // Các màn hình fullscreen tự cuộn riêng
+            <View style={styles.fullscreenContent}>
+              {renderMainContent()}
+            </View>
+          ) : (
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+              {renderMainContent()}
+            </ScrollView>
+          )}
           
           {/* Chỉ hiển thị Bottom Tab nếu không ở các màn hình phụ như ProductDetail, Cart, Checkout, Payment */}
           {["home", "mall", "explore", "event", "profile"].includes(screen) && (
@@ -194,6 +228,7 @@ function AppContent() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#ffffff" },
   scrollContent: { paddingBottom: SCROLL_BOTTOM_PADDING },
+  fullscreenContent: { flex: 1 },
   bottomTabBar: {
     position: "absolute",
     bottom: 0,
