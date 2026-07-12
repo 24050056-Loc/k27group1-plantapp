@@ -1,8 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { View, Text, StyleSheet, Image, TouchableOpacity, TextInput, ScrollView, ActivityIndicator } from "react-native";
 import { Bell, Search, SlidersHorizontal, Plus } from "lucide-react-native";
-import { getFeaturedProducts } from "../../services/productService";
-import { getCategories } from "../../services/categoryService";
+import { getHomeData } from "../api/home";
 import { Product, Category } from "../../types";
 import { resolveProductImage } from "../../assets/productImages";
 
@@ -29,12 +28,11 @@ export default function HomeScreen({ onSelectProduct }: Props) {
   useEffect(() => {
     async function loadData() {
       try {
-        const [prodList, catList] = await Promise.all([
-          getFeaturedProducts(),
-          getCategories()
-        ]);
-        setProducts(prodList);
-        setCategories(catList);
+        const res = await getHomeData();
+        if (res.success) {
+          setProducts(res.featuredProducts);
+          setCategories(res.categories);
+        }
       } catch (err) {
         console.error("Lỗi khi tải dữ liệu trang chủ:", err);
       } finally {

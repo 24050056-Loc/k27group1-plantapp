@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator } from "react-native";
 import { useMutation } from "@tanstack/react-query";
-import { loginApi } from "../../services/authService";
+import { loginApi } from "../api/auth";
 import { useAuth } from "../../context/AuthContext";
 
 type Props = {

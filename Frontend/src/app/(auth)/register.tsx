@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { View, Text, TextInput, TouchableOpacity, StyleSheet, ActivityIndicator, Alert } from "react-native";
 import { useMutation } from "@tanstack/react-query";
-import { registerApi } from "../../services/authService";
+import { registerApi } from "../api/auth";
 
 type Props = {
   onRegister: () => void;
