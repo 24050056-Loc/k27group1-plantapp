@@ -19,6 +19,7 @@ import CheckoutScreen from "./(checkout)/Checkout";
 import PaymentCODScreen from "./(payment)/PaymentCOD";
 import PaymentQRScreen from "./(payment)/PaymentQR";
 import ProductDetailScreen from "./(product)/ProductDetail";
+import OrderDetailScreen from "./(order)/OrderDetail";
 import {
   Home as HomeIcon,
   Compass as CompassIcon,
@@ -61,13 +62,14 @@ type ScreenKey =
   | "checkout"
   | "paymentCOD"
   | "paymentQR"
-  | "productDetail";
+  | "productDetail"
+  | "orderDetail";
 
 // ==========================================
-// 🛠️ DEV CONFIG (Dễ dàng bật/tắt hoặc xóa đi khi hoàn thành dự án)
+// 🛠️ DEV CONFIG
 // ==========================================
-const DEV_MODE = true; // Bật true để tự động đăng nhập & vào thẳng màn hình test
-const DEV_INITIAL_SCREEN: ScreenKey = "home"; // Màn hình muốn test: "home" | "cart" | "mall" | "profile"
+const DEV_MODE = false; // Tắt DEV Mode để bắt buộc đăng nhập
+const DEV_INITIAL_SCREEN: ScreenKey = "splash"; // Màn hình khởi đầu
 // ==========================================
 
 export default function App() {
@@ -90,6 +92,7 @@ function AppContent() {
   );
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [activeOrderId, setActiveOrderId] = useState<number | null>(null);
+  const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
 
   // Auto-login giả lập cho FE khi bật DEV_MODE
   React.useEffect(() => {
@@ -137,7 +140,7 @@ function AppContent() {
       case "event":
         return <EventScreen />;
       case "profile":
-        return <ProfileScreen onLogout={handleLogout} />;
+        return <ProfileScreen onLogout={handleLogout} onSelectOrder={(orderId) => { setSelectedOrderId(orderId); setScreen("orderDetail"); }} />;
       case "cart":
         return <CartScreen onBack={() => setScreen("mall")} onCheckout={() => setScreen("checkout")} />;
       case "checkout":
@@ -160,15 +163,22 @@ function AppContent() {
             onBack={() => setScreen(activeTab)}
           />
         );
+      case "orderDetail":
+        return (
+          <OrderDetailScreen
+            orderId={selectedOrderId || 0}
+            onBack={() => setScreen("profile")}
+          />
+        );
       default:
         return null;
     }
   };
 
-  const isMainScreen = ["home", "mall", "explore", "event", "profile", "cart", "checkout", "paymentCOD", "paymentQR", "productDetail"].includes(screen);
+  const isMainScreen = ["home", "mall", "explore", "event", "profile", "cart", "checkout", "paymentCOD", "paymentQR", "productDetail", "orderDetail"].includes(screen);
 
   // Màn hình tự quản lý scroll riêng — không cần ScrollView bọc ngoài
-  const isFullscreenScreen = ["cart", "checkout", "paymentCOD", "paymentQR", "productDetail"].includes(screen);
+  const isFullscreenScreen = ["cart", "checkout", "paymentCOD", "paymentQR", "productDetail", "orderDetail"].includes(screen);
 
   return (
     <SafeAreaView style={styles.container}>
