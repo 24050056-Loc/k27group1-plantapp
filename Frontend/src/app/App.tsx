@@ -8,8 +8,25 @@ import {
   ScrollView,
   TouchableOpacity,
   Platform,
-  Dimensions
+  Dimensions,
+  LogBox
 } from "react-native";
+
+// Bỏ qua lỗi thông báo của expo-notifications trên Expo Go để tránh hiện màn hình đỏ
+LogBox.ignoreLogs(["expo-notifications: Android Push notifications"]);
+if (__DEV__) {
+  const originalConsoleError = console.error;
+  console.error = (...args: any[]) => {
+    if (
+      typeof args[0] === "string" &&
+      args[0].includes("expo-notifications: Android Push notifications")
+    ) {
+      return;
+    }
+    originalConsoleError(...args);
+  };
+}
+
 import { HomeScreen, MallScreen, ExploreScreen, EventScreen, ProfileScreen } from "./(tabs)";
 import SplashScreen from "./(auth)/splash";
 import LoginScreen from "./(auth)/login";
@@ -93,6 +110,7 @@ function AppContent() {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [activeOrderId, setActiveOrderId] = useState<number | null>(null);
   const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
+  const [mallCategoryId, setMallCategoryId] = useState<number | null>(null);
 
   // Auto-login giả lập cho FE khi bật DEV_MODE
   React.useEffect(() => {
@@ -132,9 +150,25 @@ function AppContent() {
   const renderMainContent = () => {
     switch (screen) {
       case "home":
-        return <HomeScreen onSelectProduct={(p) => handleSelectProduct(p, "home")} />;
+        return (
+          <HomeScreen
+            onSelectProduct={(p) => handleSelectProduct(p, "home")}
+            onSelectCategory={(catId) => {
+              setMallCategoryId(catId);
+              setActiveTab("mall");
+              setScreen("mall");
+            }}
+          />
+        );
       case "mall":
-        return <MallScreen onSelectProduct={(p) => handleSelectProduct(p, "mall")} onOpenCart={() => setScreen("cart")} />;
+        return (
+          <MallScreen
+            onSelectProduct={(p) => handleSelectProduct(p, "mall")}
+            onOpenCart={() => setScreen("cart")}
+            initialCategoryId={mallCategoryId}
+            onClearInitialCategory={() => setMallCategoryId(null)}
+          />
+        );
       case "explore":
         return <ExploreScreen />;
       case "event":

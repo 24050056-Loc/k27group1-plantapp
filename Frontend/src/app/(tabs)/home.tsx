@@ -26,6 +26,7 @@ const CARD_HEIGHT = 200;
 
 type Props = {
   onSelectProduct: (product: Product) => void;
+  onSelectCategory?: (categoryId: number) => void;
 };
 
 // ─── Starter Kit Poster Carousel ────────────────────────────────────────────
@@ -189,7 +190,7 @@ function StarterKitCarousel() {
 }
 
 // ─── Home Screen ─────────────────────────────────────────────────────────────
-export default function HomeScreen({ onSelectProduct }: Props) {
+export default function HomeScreen({ onSelectProduct, onSelectCategory }: Props) {
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
@@ -261,7 +262,11 @@ export default function HomeScreen({ onSelectProduct }: Props) {
         contentContainerStyle={styles.categoriesRow}
       >
         {categories.map((item) => (
-          <TouchableOpacity key={item.id} style={styles.categoryCard}>
+          <TouchableOpacity
+            key={item.id}
+            style={styles.categoryCard}
+            onPress={() => onSelectCategory && onSelectCategory(item.id)}
+          >
             <Text style={styles.categoryIcon}>{getCategoryIcon(item.ten_danh_muc)}</Text>
             <Text style={styles.categoryText} numberOfLines={1}>
               {item.ten_danh_muc}
