@@ -40,4 +40,4 @@ router.get('/featured', async (req, res) => {
     }
 });
 
-modules.exports = router;
+module.exports = router;

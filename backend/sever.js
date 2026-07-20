@@ -1,16 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
-// Chèn đoạn này vào dưới các dòng require trong sever.js để test
-console.log('--- KIỂM TRA ROUTE EXPORT ---');
-console.log('productRoutes:', typeof productRoutes);
-console.log('authRoutes:', typeof authRoutes);
-console.log('categoriesRoutes:', typeof categoriesRoutes);
-console.log('adminRoutes:', typeof adminRoutes);
-console.log('adminproductsRoutes:', typeof adminproductsRoutes);
-console.log('adminorderRoutes:', typeof adminorderRoutes);
-console.log('adminusersRoutes:', typeof adminusersRoutes);
-console.log('-----------------------------');
+
 const app = express();
 const PORT = process.env.PORT || 8080;
 
@@ -21,23 +12,25 @@ app.use(cors());
 // ==========================================
 // 1. IMPORT CÁC FILE ROUTES
 // ==========================================
-const productRoutes      = require('./src/product');
-const authRoutes         = require('./src/auth');
-const categoriesRoutes   = require('./src/categories');
-const contactRoutes      = require('./src/lienhe');
-const checkoutRoutes     = require('./src/checkout');
-const aboutRoutes        = require('./src/gioithieu');
-const cartRoutes         = require('./src/cart');
-const usersRoutes        = require('./src/users');
-const orderRoutes        = require('./src/order'); // Đã thêm dấu ;
-const mobileRoutes       = require('./src/mobile');
-const couponsRoutes      = require('./src/coupons');
+const productRoutes = require('./src/product');
+const authRoutes = require('./src/auth');
+const categoriesRoutes = require('./src/categories');
+const contactRoutes = require('./src/lienhe');
+const checkoutRoutes = require('./src/checkout');
+const aboutRoutes = require('./src/gioithieu');
+const cartRoutes = require('./src/cart');
+const usersRoutes = require('./src/users');
+const orderRoutes = require('./src/order'); // Đã thêm dấu ;
+const mobileRoutes = require('./src/mobile');
+const couponsRoutes = require('./src/coupons');
+const promotional_eventsRoutes = require('./src/promotional_events');
+const minigameRoutes = require('./src/minigame');
 
 // Các route Admin
-const adminRoutes        = require('./src/admin');
+const adminRoutes = require('./src/admin');
 const adminproductsRoutes = require('./src/adminproducts');
-const adminorderRoutes   = require('./src/adminorder');
-const adminusersRoutes   = require('./src/adminusers');
+const adminorderRoutes = require('./src/adminorder');
+const adminusersRoutes = require('./src/adminusers');
 
 // ==========================================
 // 2. SỬ DỤNG CÁC ROUTES (Đã gom cụm)
@@ -54,6 +47,8 @@ app.use('/users', usersRoutes);
 app.use('/order', orderRoutes);
 app.use('/mobile', mobileRoutes);
 app.use('/coupons', couponsRoutes);
+app.use('/promotional_events', promotional_eventsRoutes);
+app.use('/api/game', minigameRoutes);
 
 // Cụm Route Admin
 app.use('/admin', adminRoutes);
@@ -66,5 +61,5 @@ app.use('/adminusers', adminusersRoutes);
 // ==========================================
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Server đang chạy tại: http://localhost:${PORT}`);
-    console.log(`🌐 LAN IP: http://192.168.190.239:${PORT}`);
+    console.log(`🌐 LAN IP: http://192.168.190.13:${PORT}`);
 });

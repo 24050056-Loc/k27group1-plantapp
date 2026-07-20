@@ -86,4 +86,4 @@ router.post('/', authenticateToken, async (req, res) => {
     }
 });
 
-modules.exports = router;
+module.exports = router;

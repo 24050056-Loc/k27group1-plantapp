@@ -143,4 +143,4 @@ router.put('/:userId/orders/:orderId/pay', authenticateToken, async (req, res) =
     }
 });
 
-modules.exports = router;
+module.exports = router;

@@ -49,4 +49,4 @@ router.get('/revenue-chart', verifyToken, isAdmin, async (req, res) => {
     }
 });
 
-modules.exports = router;
+module.exports = router;

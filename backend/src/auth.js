@@ -10,7 +10,7 @@ const SECRET_KEY = process.env.SECRET_KEY || "cay_canh_bi_mat_123";
 // --- API ĐĂNG KÝ ---
 router.post('/register', async (req, res) => {
     try {
-        
+
         const { username, password, email, full_name } = req.body;
 
         if (!username || !password || !email) {
@@ -22,10 +22,10 @@ router.post('/register', async (req, res) => {
 
         // SQL khớp với bảng 'users' của bạn
         const sql = 'INSERT INTO users (ten_dang_nhap, mat_khau, email, ho_ten, vai_tro) VALUES (?, ?, ?, ?, ?)';
-        
+
         // Mặc định vai trò là 'khach_hang'
         await pool.execute(sql, [username, hashedPassword, email, full_name || null, 'khach_hang']);
-        
+
         res.status(201).json({ success: true, message: "Đăng ký thành công!" });
     } catch (error) {
         if (error.code === 'ER_DUP_ENTRY') {
@@ -38,7 +38,7 @@ router.post('/register', async (req, res) => {
 // --- API ĐĂNG NHẬP ---
 router.post('/login', async (req, res) => {
     try {
-        
+
         const { username, password } = req.body;
 
         // Tìm user theo 'ten_dang_nhap'
@@ -51,17 +51,17 @@ router.post('/login', async (req, res) => {
 
         // Tạo JWT Token
         const token = jwt.sign(
-            { id: user.id, role: user.vai_tro }, 
-            SECRET_KEY, 
+            { id: user.id, role: user.vai_tro },
+            SECRET_KEY,
             { expiresIn: '24h' }
         );
 
         // Trả về thông tin (ẩn mật khẩu)
         const { mat_khau, ...userPublic } = user;
-        res.json({ 
+        res.json({
             success: true,
-            accessToken: token, 
-            user: userPublic 
+            accessToken: token,
+            user: userPublic
         });
     } catch (error) {
         console.log(error)
@@ -69,4 +69,4 @@ router.post('/login', async (req, res) => {
     }
 });
 
-modules.exports = router;
+module.exports = router;

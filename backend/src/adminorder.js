@@ -48,7 +48,7 @@ router.delete('/:id', async (req, res) => {
 
         // Xóa order_items trước (foreign key constraint)
         await pool.execute('DELETE FROM order_items WHERE order_id = ?', [id]);
-        
+
         // Xóa order
         await pool.execute('DELETE FROM orders WHERE id = ?', [id]);
 
@@ -59,4 +59,4 @@ router.delete('/:id', async (req, res) => {
     }
 });
 
-modules.exports = router;
+module.exports = router;

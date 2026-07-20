@@ -23,4 +23,4 @@ router.get('/:id', orderController.getOrderById);
 router.put('/:id', orderController.updateOrderStatus);
 
 
-modules.exports = router;
+module.exports = router;

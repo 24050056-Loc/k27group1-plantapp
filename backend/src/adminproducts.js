@@ -60,19 +60,19 @@ router.post('/admin/add', async (req, res) => {
             INSERT INTO products (ten_san_pham, gia_tien, so_luong_kho, category_id, hinh_anh_url, dang_kinh_doanh) 
             VALUES (?, ?, ?, ?, ?, ?)
         `;
-        
+
         await pool.execute(sql, [
-            ten_san_pham, 
-            gia_tien, 
-            so_luong_kho, 
-            category_id || null, 
-            hinh_anh_url, 
+            ten_san_pham,
+            gia_tien,
+            so_luong_kho,
+            category_id || null,
+            hinh_anh_url,
             dang_kinh_doanh === true || dang_kinh_doanh === 'true' ? 1 : 0
         ]);
 
         res.status(201).json({ success: true, message: "Thêm thành công!" });
     } catch (error) {
-        console.error("LỖI SQL KHI THÊM:", error.sqlMessage); 
+        console.error("LỖI SQL KHI THÊM:", error.sqlMessage);
         res.status(500).json({ success: false, message: "Lỗi Database: " + error.sqlMessage });
     }
 });
@@ -88,10 +88,10 @@ router.put('/admin/update/:id', async (req, res) => {
             SET ten_san_pham=?, gia_tien=?, so_luong_kho=?, category_id=?, hinh_anh_url=?, dang_kinh_doanh=? 
             WHERE id=?
         `;
-        
+
         await pool.execute(sql, [
-            ten_san_pham, gia_tien, so_luong_kho, category_id || null, hinh_anh_url, 
-            dang_kinh_doanh === true || dang_kinh_doanh === 'true' ? 1 : 0, 
+            ten_san_pham, gia_tien, so_luong_kho, category_id || null, hinh_anh_url,
+            dang_kinh_doanh === true || dang_kinh_doanh === 'true' ? 1 : 0,
             id
         ]);
 
@@ -114,4 +114,4 @@ router.delete('/admin/delete/:id', async (req, res) => {
     }
 });
 
-modules.exports = router;
+module.exports = router;

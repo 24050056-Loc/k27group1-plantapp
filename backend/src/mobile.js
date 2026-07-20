@@ -46,4 +46,4 @@ router.get('/home', async (req, res) => {
     }
 });
 
-modules.exports = router;
+module.exports = router;

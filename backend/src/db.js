@@ -28,4 +28,4 @@ pool.getConnection()
 
     });
 
-modules.exports = router;
+module.exports = pool;
