@@ -1,6 +1,19 @@
-import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, Image, TouchableOpacity, TextInput, ScrollView, ActivityIndicator } from "react-native";
-import { Bell, Search, SlidersHorizontal, Plus } from "lucide-react-native";
+import React, { useEffect, useRef, useState } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  Image,
+  TouchableOpacity,
+  TextInput,
+  ScrollView,
+  ActivityIndicator,
+  Dimensions,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
+  Alert,
+} from "react-native";
+import { Bell, Search, SlidersHorizontal, Plus, Sparkles } from "lucide-react-native";
 import { getFeaturedProducts } from "../../services/productService";
 import { getCategories } from "../../services/categoryService";
 import { Product, Category } from "../../types";
@@ -13,6 +26,7 @@ const CARD_HEIGHT = 200;
 
 type Props = {
   onSelectProduct: (product: Product) => void;
+  onSelectCategory?: (categoryId: number) => void;
 };
 
 // ─── Starter Kit Poster Carousel ────────────────────────────────────────────
@@ -176,7 +190,7 @@ function StarterKitCarousel() {
 }
 
 // ─── Home Screen ─────────────────────────────────────────────────────────────
-export default function HomeScreen({ onSelectProduct }: Props) {
+export default function HomeScreen({ onSelectProduct, onSelectCategory }: Props) {
   const [products, setProducts] = useState<Product[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
@@ -186,7 +200,7 @@ export default function HomeScreen({ onSelectProduct }: Props) {
       try {
         const [prodList, catList] = await Promise.all([
           getFeaturedProducts(),
-          getCategories()
+          getCategories(),
         ]);
         setProducts(prodList);
         setCategories(catList);
@@ -248,7 +262,11 @@ export default function HomeScreen({ onSelectProduct }: Props) {
         contentContainerStyle={styles.categoriesRow}
       >
         {categories.map((item) => (
-          <TouchableOpacity key={item.id} style={styles.categoryCard}>
+          <TouchableOpacity
+            key={item.id}
+            style={styles.categoryCard}
+            onPress={() => onSelectCategory && onSelectCategory(item.id)}
+          >
             <Text style={styles.categoryIcon}>{getCategoryIcon(item.ten_danh_muc)}</Text>
             <Text style={styles.categoryText} numberOfLines={1}>
               {item.ten_danh_muc}

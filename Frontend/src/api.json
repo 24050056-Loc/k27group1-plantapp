@@ -1,5 +1,5 @@
 {
-  "baseUrl": "192.168.190.14",
+  "baseUrl": "http://192.168.2.64:8080",
   "tokenStorageKey": "token",
   "defaultHeaders": {
     "Content-Type": "application/json"
@@ -11,6 +11,7 @@
     "products": "/product",
     "featuredProducts": "/product/featured",
     "orders": "/order",
-    "users": "/users"
+    "users": "/users",
+    "cart": "/cart"
   }
 }

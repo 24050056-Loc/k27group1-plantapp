@@ -61,5 +61,5 @@ app.use('/adminusers', adminusersRoutes);
 // ==========================================
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Server đang chạy tại: http://localhost:${PORT}`);
-    console.log(`🌐 LAN IP: http://192.168.190.13:${PORT}`);
+    console.log(`🌐 LAN IP: http://192.168.190.239:${PORT}`);
 });

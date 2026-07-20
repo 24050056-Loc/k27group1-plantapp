@@ -1,32 +1,59 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, Image, TouchableOpacity, TextInput, FlatList, ActivityIndicator, Alert } from "react-native";
+import { View, Text, StyleSheet, Image, TouchableOpacity, TextInput, FlatList, ActivityIndicator, Alert, ScrollView } from "react-native";
 import { Search, Plus, ShoppingCart } from "lucide-react-native";
 import { getProducts } from "../../services/productService";
+import { getCategories } from "../../services/categoryService";
 import { addToCart, getCart } from "../../services/cartService";
-import { Product } from "../../types";
+import { Product, Category } from "../../types";
 import { resolveProductImage } from "../../assets/productImages";
 import { useAuth } from "../../context/AuthContext";
 
 type Props = {
   onSelectProduct: (product: Product) => void;
   onOpenCart?: () => void;
+  initialCategoryId?: number | null;
+  onClearInitialCategory?: () => void;
 };
 
-export default function MallScreen({ onSelectProduct, onOpenCart }: Props) {
+export default function MallScreen({
+  onSelectProduct,
+  onOpenCart,
+  initialCategoryId,
+  onClearInitialCategory,
+}: Props) {
   const { token } = useAuth();
   const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
+  const [sortType, setSortType] = useState<"default" | "priceAsc" | "priceDesc">("default");
+  const [priceFilter, setPriceFilter] = useState<"all" | "under100" | "100to300" | "over300">("all");
   const [cartCount, setCartCount] = useState<number>(0);
   const [filteredProducts, setFilteredProducts] = useState<Product[]>([]);
   const [search, setSearch] = useState("");
+
+  // Nhận diện chuyển tab từ Home khi bấm chọn Danh mục cụ thể
+  useEffect(() => {
+    if (initialCategoryId !== undefined && initialCategoryId !== null) {
+      setSelectedCategory(initialCategoryId);
+      if (onClearInitialCategory) {
+        onClearInitialCategory();
+      }
+    }
+  }, [initialCategoryId]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<number | null>(null);
 
   useEffect(() => {
-    async function loadProducts() {
+    async function loadData() {
       try {
-        const prodList = await getProducts();
+        setLoading(true);
+        const [prodList, catList] = await Promise.all([
+          getProducts(),
+          getCategories()
+        ]);
         setProducts(prodList);
-        setFilteredProducts(prodList);
+        setCategories(catList);
+
         // fetch cart count if logged in
         if (token) {
           try {
@@ -41,24 +68,54 @@ export default function MallScreen({ onSelectProduct, onOpenCart }: Props) {
           }
         }
       } catch (err) {
-        console.error("Lỗi khi tải sản phẩm tại Mall:", err);
+        console.error("Lỗi khi tải dữ liệu tại Mall:", err);
       } finally {
         setLoading(false);
       }
     }
-    loadProducts();
+    loadData();
   }, [token]);
+
+  // Bộ lọc sản phẩm đa năng (Search, Category, Price Range, Sort)
+  useEffect(() => {
+    let result = [...products];
+
+    // 1. Lọc theo từ khóa tìm kiếm
+    if (search.trim()) {
+      result = result.filter((p) =>
+        p.ten_san_pham.toLowerCase().includes(search.toLowerCase())
+      );
+    }
+
+    // 2. Lọc theo danh mục
+    if (selectedCategory !== null) {
+      result = result.filter((p) => p.category_id === selectedCategory);
+    }
+
+    // 3. Lọc theo khoảng giá
+    if (priceFilter === "under100") {
+      result = result.filter((p) => parseFloat(p.gia_tien) < 100000);
+    } else if (priceFilter === "100to300") {
+      result = result.filter((p) => {
+        const val = parseFloat(p.gia_tien);
+        return val >= 100000 && val <= 300000;
+      });
+    } else if (priceFilter === "over300") {
+      result = result.filter((p) => parseFloat(p.gia_tien) > 300000);
+    }
+
+    // 4. Sắp xếp theo giá tiền
+    if (sortType === "priceAsc") {
+      result.sort((a, b) => parseFloat(a.gia_tien) - parseFloat(b.gia_tien));
+    } else if (sortType === "priceDesc") {
+      result.sort((a, b) => parseFloat(b.gia_tien) - parseFloat(a.gia_tien));
+    }
+
+    setFilteredProducts(result);
+  }, [products, search, selectedCategory, sortType, priceFilter]);
 
   const handleSearch = (text: string) => {
     setSearch(text);
-    if (!text.trim()) {
-      setFilteredProducts(products);
-    } else {
-      const filtered = products.filter((p) =>
-        p.ten_san_pham.toLowerCase().includes(text.toLowerCase())
-      );
-      setFilteredProducts(filtered);
-    }
   };
 
   const handleAddToCart = async (product: Product) => {
@@ -113,6 +170,138 @@ export default function MallScreen({ onSelectProduct, onOpenCart }: Props) {
         />
       </View>
 
+      {/* Danh mục dạng cuộn ngang */}
+      <View style={styles.categoriesContainer}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.categoriesScroll}
+        >
+          <TouchableOpacity
+            style={[
+              styles.categoryPill,
+              selectedCategory === null && styles.categoryPillActive,
+            ]}
+            onPress={() => setSelectedCategory(null)}
+          >
+            <Text
+              style={[
+                styles.categoryText,
+                selectedCategory === null && styles.categoryTextActive,
+              ]}
+            >
+              🌿 Tất cả
+            </Text>
+          </TouchableOpacity>
+          {categories.map((cat) => (
+            <TouchableOpacity
+              key={cat.id}
+              style={[
+                styles.categoryPill,
+                selectedCategory === cat.id && styles.categoryPillActive,
+              ]}
+              onPress={() => setSelectedCategory(cat.id)}
+            >
+              <Text
+                style={[
+                  styles.categoryText,
+                  selectedCategory === cat.id && styles.categoryTextActive,
+                ]}
+              >
+                {cat.ten_danh_muc}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </View>
+
+      {/* Bộ lọc nhanh (Sắp xếp, Khoảng giá) */}
+      <View style={styles.filtersContainer}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filtersScroll}
+        >
+          {/* Sắp xếp */}
+          <TouchableOpacity
+            style={[
+              styles.filterPill,
+              sortType !== "default" && styles.filterPillActive,
+            ]}
+            onPress={() => {
+              if (sortType === "default") setSortType("priceAsc");
+              else if (sortType === "priceAsc") setSortType("priceDesc");
+              else setSortType("default");
+            }}
+          >
+            <Text
+              style={[
+                styles.filterText,
+                sortType !== "default" && styles.filterTextActive,
+              ]}
+            >
+              {sortType === "default" && "⇅ Giá"}
+              {sortType === "priceAsc" && "📈 Giá tăng"}
+              {sortType === "priceDesc" && "📉 Giá giảm"}
+            </Text>
+          </TouchableOpacity>
+
+          {/* Dưới 100k */}
+          <TouchableOpacity
+            style={[
+              styles.filterPill,
+              priceFilter === "under100" && styles.filterPillActive,
+            ]}
+            onPress={() => setPriceFilter(priceFilter === "under100" ? "all" : "under100")}
+          >
+            <Text
+              style={[
+                styles.filterText,
+                priceFilter === "under100" && styles.filterTextActive,
+              ]}
+            >
+              Dưới 100k
+            </Text>
+          </TouchableOpacity>
+
+          {/* 100k - 300k */}
+          <TouchableOpacity
+            style={[
+              styles.filterPill,
+              priceFilter === "100to300" && styles.filterPillActive,
+            ]}
+            onPress={() => setPriceFilter(priceFilter === "100to300" ? "all" : "100to300")}
+          >
+            <Text
+              style={[
+                styles.filterText,
+                priceFilter === "100to300" && styles.filterTextActive,
+              ]}
+            >
+              100k - 300k
+            </Text>
+          </TouchableOpacity>
+
+          {/* Trên 300k */}
+          <TouchableOpacity
+            style={[
+              styles.filterPill,
+              priceFilter === "over300" && styles.filterPillActive,
+            ]}
+            onPress={() => setPriceFilter(priceFilter === "over300" ? "all" : "over300")}
+          >
+            <Text
+              style={[
+                styles.filterText,
+                priceFilter === "over300" && styles.filterTextActive,
+              ]}
+            >
+              Trên 300k
+            </Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </View>
+
       {loading ? (
         <ActivityIndicator size="large" color="#2E7D32" style={{ marginTop: 40 }} />
       ) : (
@@ -158,7 +347,7 @@ export default function MallScreen({ onSelectProduct, onOpenCart }: Props) {
 const styles = StyleSheet.create({
   container: { padding: 20, paddingTop: 52 },
   title: { fontSize: 22, fontWeight: "700", color: "#1A2E1A", marginBottom: 16 },
-  searchRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#f5f5f5", borderRadius: 16, paddingHorizontal: 12, height: 48, marginBottom: 20 },
+  searchRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#f5f5f5", borderRadius: 16, paddingHorizontal: 12, height: 48, marginBottom: 16 },
   searchIcon: { marginRight: 8 },
   searchInput: { flex: 1, fontSize: 14, color: "#333" },
   headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
@@ -174,6 +363,55 @@ const styles = StyleSheet.create({
   productPrice: { fontSize: 13, fontWeight: "bold", color: "#2E7D32" },
   addButton: { width: 28, height: 28, borderRadius: 10, backgroundColor: "#2E7D32", alignItems: "center", justifyContent: "center" },
   disabledButton: { backgroundColor: "#ccc" },
-  emptyText: { color: "#888", textAlign: "center", width: "100%", marginTop: 20 }
+  emptyText: { color: "#888", textAlign: "center", width: "100%", marginTop: 20 },
+
+  // Styles mới cho filters
+  categoriesContainer: { marginBottom: 10 },
+  categoriesScroll: { gap: 8, paddingRight: 10 },
+  categoryPill: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+    backgroundColor: "#F0F0F0",
+    borderWidth: 1,
+    borderColor: "#E5E5E5",
+  },
+  categoryPillActive: {
+    backgroundColor: "#E8F5E9",
+    borderColor: "#A5D6A7",
+  },
+  categoryText: {
+    fontSize: 12,
+    color: "#666",
+    fontWeight: "600",
+  },
+  categoryTextActive: {
+    color: "#2E7D32",
+    fontWeight: "700",
+  },
+
+  filtersContainer: { marginBottom: 16 },
+  filtersScroll: { gap: 6, paddingRight: 10 },
+  filterPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: "#fafafa",
+    borderWidth: 1,
+    borderColor: "#e0e0e0",
+  },
+  filterPillActive: {
+    backgroundColor: "#FFF3E0",
+    borderColor: "#FFB74D",
+  },
+  filterText: {
+    fontSize: 11,
+    color: "#666",
+    fontWeight: "600",
+  },
+  filterTextActive: {
+    color: "#E65100",
+    fontWeight: "700",
+  },
 });
 

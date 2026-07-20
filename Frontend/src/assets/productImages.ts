@@ -30,6 +30,18 @@ const productImages: { [key: string]: any } = {
 
 const DEFAULT_REMOTE = 'https://images.unsplash.com/photo-1501004318641-b39e6451bec6?w=300&fit=crop';
 
+// Mapping tường minh: từ khóa → tên file ảnh
+const keywordToImage: { [key: string]: string } = {
+  "bàng đài loan": "cay_bang_dai_loan.jpg",
+  "bàng dài loan": "cay_bang_dai_loan.jpg",
+  "bang dai loan": "cay_bang_dai_loan.jpg",
+  "lưỡi hổ": "SnakePlant.jpg",
+  "sen đá": "Succulent.jpg",
+  "dâu xanh": "CayDauXanh.jpg",
+  "dâu da": "CayDauXanh.jpg",
+  "xương rồng": "cactus.jpg",
+};
+
 export function resolveProductImage(urlPath?: string | null) {
   if (!urlPath) return { uri: DEFAULT_REMOTE };
   if (typeof urlPath !== 'string') return { uri: DEFAULT_REMOTE };
@@ -42,6 +54,64 @@ export function resolveProductImage(urlPath?: string | null) {
   if (key) return productImages[key];
 
   // Fallback to remote default
+  return { uri: DEFAULT_REMOTE };
+}
+
+// Helper để tìm hình ảnh dựa vào tên sản phẩm (dùng cho giỏ hàng)
+export function resolveProductImageByName(productName?: string | null) {
+  if (!productName || typeof productName !== 'string') return { uri: DEFAULT_REMOTE };
+
+  const inputLower = productName.toLowerCase();
+
+  // 1. Tìm trong keyword mapping với case-insensitive (giữ nguyên dấu)
+  for (const [keyword, imageFile] of Object.entries(keywordToImage)) {
+    if (inputLower.includes(keyword.toLowerCase())) {
+      if (productImages[imageFile]) {
+        return productImages[imageFile];
+      }
+    }
+  }
+
+  // 2. Normalize và tìm kiếm: loại bỏ dấu, khoảng trắng, ký tự đặc biệt
+  const normalizedInput = productName
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // Loại bỏ dấu tiếng Việt
+    .replace(/\s+/g, '') // Loại bỏ khoảng trắng
+    .replace(/[()]/g, '') // Loại bỏ ngoặc tròn
+    .replace(/[^a-z0-9]/g, ''); // Loại bỏ ký tự đặc biệt khác
+
+  // Cũng normalize các keyword để so sánh
+  for (const [keyword, imageFile] of Object.entries(keywordToImage)) {
+    const normalizedKeyword = keyword
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/\s+/g, '')
+      .replace(/[^a-z0-9]/g, '');
+    
+    if (normalizedInput.includes(normalizedKeyword)) {
+      if (productImages[imageFile]) {
+        return productImages[imageFile];
+      }
+    }
+  }
+
+  // 3. Tìm kiếm trong file images: loại bỏ extension và dấu
+  for (const imageKey of Object.keys(productImages)) {
+    const normalizedKey = imageKey
+      .toLowerCase()
+      .replace(/\.[^.]+$/, '') // Loại bỏ extension
+      .replace(/[-_]/g, '') // Loại bỏ dấu gạch ngang và underscore
+      .replace(/\s+/g, ''); // Loại bỏ khoảng trắng
+
+    // So sánh chuỗi đã normalize
+    if (normalizedInput.includes(normalizedKey) || normalizedKey.includes(normalizedInput)) {
+      return productImages[imageKey];
+    }
+  }
+
+  // Fallback: trả về ảnh mặc định từ Unsplash
   return { uri: DEFAULT_REMOTE };
 }
 

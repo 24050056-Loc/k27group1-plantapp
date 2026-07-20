@@ -17,6 +17,23 @@
           "resizeMode": "contain",
           "backgroundColor": "#ffffff"
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Ứng dụng cần quyền truy cập thư viện ảnh để đổi ảnh đại diện.",
+          "cameraPermission": "Ứng dụng cần quyền dùng camera để chụp ảnh đại diện."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/Tree.png",
+          "color": "#2E7D32",
+          "defaultChannel": "plant-care",
+          "androidMode": "default",
+          "androidCollapsedTitle": "PlantApp 🌿"
+        }
       ]
     ],
     "ios": {

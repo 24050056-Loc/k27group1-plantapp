@@ -22,6 +22,8 @@ import {
 } from "../../services/cartService";
 import { CartItem } from "../../types";
 import { STARTER_KITS, StarterKit } from "../../data/starterKits";
+import { baseUrl } from "../../api";
+import { resolveProductImageByName } from "../../assets/productImages";
 
 import {
   ShoppingCart,
@@ -31,6 +33,7 @@ import {
   ChevronLeft,
   Sparkles,
   Leaf,
+  Check,
 } from "lucide-react-native";
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
@@ -42,6 +45,8 @@ type SwipeableItemProps = {
   onDelete: (cartId: number) => void;
   onChangeQuantity: (cartId: number, delta: number, currentQty: number) => void;
   isUpdating: boolean;
+  isSelected: boolean;
+  onToggleSelect: (cartId: number) => void;
 };
 
 function SwipeableCartItem({
@@ -49,6 +54,8 @@ function SwipeableCartItem({
   onDelete,
   onChangeQuantity,
   isUpdating,
+  isSelected,
+  onToggleSelect,
 }: SwipeableItemProps) {
   const translateX = useRef(new Animated.Value(0)).current;
   const [swiped, setSwiped] = useState(false);
@@ -136,18 +143,20 @@ function SwipeableCartItem({
           />
         )}
 
+        {/* Checkbox để chọn sản phẩm */}
+        <TouchableOpacity
+          style={[swipeStyles.checkbox, isSelected && swipeStyles.checkboxSelected]}
+          onPress={() => onToggleSelect(item.cart_id)}
+        >
+          {isSelected && <Check size={14} stroke="#fff" strokeWidth={3} />}
+        </TouchableOpacity>
+
         {/* Ảnh sản phẩm */}
         <View style={swipeStyles.imageContainer}>
-          {item.hinh_anh_url ? (
-            <Image
-              source={{ uri: item.hinh_anh_url.startsWith("http") ? item.hinh_anh_url : `http://192.168.190.13:8080/${item.hinh_anh_url}` }}
-              style={swipeStyles.productImage}
-            />
-          ) : (
-            <View style={swipeStyles.imagePlaceholder}>
-              <Leaf size={28} stroke="#2E7D32" />
-            </View>
-          )}
+          <Image
+            source={resolveProductImageByName(item.ten_san_pham)}
+            style={swipeStyles.productImage}
+          />
         </View>
 
         {/* Thông tin sản phẩm */}
@@ -272,6 +281,8 @@ export default function CartScreen({ onBack, onCheckout }: Props) {
   const [updatingId, setUpdatingId] = useState<number | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [addingKitId, setAddingKitId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const loadCart = useCallback(async () => {
     if (!token) {
@@ -301,13 +312,80 @@ export default function CartScreen({ onBack, onCheckout }: Props) {
     try {
       await removeFromCart(token ?? undefined, cartId);
       setCartItems((prev) => prev.filter((i) => i.cart_id !== cartId));
+      setSelectedIds((prev) => {
+        const newSet = new Set(prev);
+        newSet.delete(cartId);
+        return newSet;
+      });
     } catch (err) {
       Alert.alert("Lỗi", "Không thể xóa sản phẩm. Vui lòng thử lại.");
-      // Refresh để lấy lại đúng data
       loadCart();
     } finally {
       setDeletingId(null);
     }
+  };
+
+  const handleToggleSelect = (cartId: number) => {
+    setSelectedIds((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(cartId)) {
+        newSet.delete(cartId);
+      } else {
+        newSet.add(cartId);
+      }
+      return newSet;
+    });
+  };
+
+  const handleSelectAll = () => {
+    if (selectedIds.size === cartItems.length) {
+      // Nếu tất cả đã chọn, bỏ chọn tất cả
+      setSelectedIds(new Set());
+    } else {
+      // Chọn tất cả
+      setSelectedIds(new Set(cartItems.map((item) => item.cart_id)));
+    }
+  };
+
+  const handleDeleteSelected = async () => {
+    if (selectedIds.size === 0) {
+      Alert.alert("Thông báo", "Vui lòng chọn sản phẩm để xóa.");
+      return;
+    }
+
+    Alert.alert(
+      "Xác nhận xóa",
+      `Bạn muốn xóa ${selectedIds.size} sản phẩm?`,
+      [
+        { text: "Hủy", onPress: () => {} },
+        {
+          text: "Xóa",
+          onPress: async () => {
+            setIsDeleting(true);
+            try {
+              // Xóa từng sản phẩm
+              await Promise.all(
+                Array.from(selectedIds).map((cartId) =>
+                  removeFromCart(token ?? undefined, cartId)
+                )
+              );
+              // Cập nhật danh sách
+              setCartItems((prev) =>
+                prev.filter((i) => !selectedIds.has(i.cart_id))
+              );
+              setSelectedIds(new Set());
+              Alert.alert("Thành công", "Đã xóa các sản phẩm đã chọn.");
+            } catch (err) {
+              Alert.alert("Lỗi", "Không thể xóa sản phẩm. Vui lòng thử lại.");
+              loadCart();
+            } finally {
+              setIsDeleting(false);
+            }
+          },
+          style: "destructive",
+        },
+      ]
+    );
   };
 
   const handleChangeQuantity = async (
@@ -387,9 +465,16 @@ export default function CartScreen({ onBack, onCheckout }: Props) {
           <ShoppingCart size={20} stroke="#2E7D32" />
           <Text style={styles.headerTitle}>Giỏ hàng</Text>
         </View>
-        {itemCount > 0 ? (
+        {cartItems.length > 0 && selectedIds.size === 0 ? (
+          <TouchableOpacity
+            style={styles.selectAllButton}
+            onPress={handleSelectAll}
+          >
+            <Text style={styles.selectAllText}>Chọn tất cả</Text>
+          </TouchableOpacity>
+        ) : selectedIds.size > 0 ? (
           <View style={styles.countBadge}>
-            <Text style={styles.countBadgeText}>{itemCount}</Text>
+            <Text style={styles.countBadgeText}>{selectedIds.size}</Text>
           </View>
         ) : (
           <View style={{ width: 36 }} />
@@ -424,6 +509,8 @@ export default function CartScreen({ onBack, onCheckout }: Props) {
                   onDelete={handleDelete}
                   onChangeQuantity={handleChangeQuantity}
                   isUpdating={updatingId === item.cart_id}
+                  isSelected={selectedIds.has(item.cart_id)}
+                  onToggleSelect={handleToggleSelect}
                 />
               ))}
 
@@ -453,6 +540,34 @@ export default function CartScreen({ onBack, onCheckout }: Props) {
                   Tiến hành thanh toán →
                 </Text>
               </TouchableOpacity>
+
+              {/* Action buttons khi có sản phẩm được chọn */}
+              {selectedIds.size > 0 && (
+                <View style={styles.actionButtonsRow}>
+                  <TouchableOpacity
+                    style={styles.cancelSelectButton}
+                    onPress={() => setSelectedIds(new Set())}
+                  >
+                    <Text style={styles.cancelSelectButtonText}>Bỏ chọn</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.deleteSelectedButton, isDeleting && styles.deleteButtonDisabled]}
+                    onPress={handleDeleteSelected}
+                    disabled={isDeleting}
+                  >
+                    {isDeleting ? (
+                      <ActivityIndicator size="small" color="#fff" />
+                    ) : (
+                      <>
+                        <Trash2 size={16} stroke="#fff" />
+                        <Text style={styles.deleteSelectedButtonText}>
+                          Xóa ({selectedIds.size})
+                        </Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
           ) : (
             <View style={styles.emptyContainer}>
@@ -553,6 +668,20 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     fontSize: 14,
   },
+  selectAllButton: {
+    minWidth: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: "#EDF3E8",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 12,
+  },
+  selectAllText: {
+    color: "#2E7D32",
+    fontWeight: "600",
+    fontSize: 12,
+  },
   // Loading
   loadingContainer: {
     flex: 1,
@@ -650,6 +779,44 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     fontSize: 16,
     letterSpacing: 0.3,
+  },
+  // Action buttons cho multi-select
+  actionButtonsRow: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 12,
+  },
+  cancelSelectButton: {
+    flex: 1,
+    borderRadius: 14,
+    paddingVertical: 12,
+    alignItems: "center",
+    borderWidth: 1.5,
+    borderColor: "#D1D5DB",
+    backgroundColor: "#f9fafb",
+  },
+  cancelSelectButtonText: {
+    color: "#6B7F6B",
+    fontWeight: "600",
+    fontSize: 14,
+  },
+  deleteSelectedButton: {
+    flex: 1,
+    borderRadius: 14,
+    paddingVertical: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#D32F2F",
+    flexDirection: "row",
+    gap: 6,
+  },
+  deleteButtonDisabled: {
+    opacity: 0.6,
+  },
+  deleteSelectedButtonText: {
+    color: "#fff",
+    fontWeight: "600",
+    fontSize: 14,
   },
   // Empty state
   emptyContainer: {
@@ -757,6 +924,20 @@ const swipeStyles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 2,
     gap: 12,
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 8,
+    borderWidth: 2,
+    borderColor: "#D1D5DB",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+  },
+  checkboxSelected: {
+    backgroundColor: "#2E7D32",
+    borderColor: "#2E7D32",
   },
   imageContainer: {
     width: 72,
