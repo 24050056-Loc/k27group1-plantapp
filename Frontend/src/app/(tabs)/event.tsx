@@ -9,6 +9,7 @@ import {
   Animated,
   Dimensions,
   Platform,
+  ActivityIndicator,
 } from "react-native";
 import Svg, {
   Ellipse,
@@ -16,7 +17,7 @@ import Svg, {
   Circle,
   G,
 } from "react-native-svg";
-import { Bell, Star, CheckCircle2, Gift, Ticket, Truck, X, ChevronRight, Droplets, Leaf } from "lucide-react-native";
+import { Bell, Star, CheckCircle2, Gift, Ticket, Truck, X, ChevronRight, Droplets, Leaf, Copy, Sparkles, Tag } from "lucide-react-native";
 import {
   requestNotificationPermission,
   scheduleDailyWaterReminder,
@@ -24,6 +25,8 @@ import {
   sendVoucherReadyNotification,
   scheduleStageAlmostDoneNotification,
 } from "../../services/notificationService";
+import { useVoucher } from "../../context/VoucherContext";
+import axiosClient from "../../api/axiosClient";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -570,18 +573,48 @@ export default function EventScreen() {
     }
   }, [missions]);
 
-  // ── Handler: Nhận Voucher ngay ────────────────────────────────────────────
+  const { addVoucher, collectedVouchers } = useVoucher();
+  const [activeSubTab, setActiveSubTab] = useState<"game" | "promotions">("game");
+  const [storeCoupons, setStoreCoupons] = useState<any[]>([]);
+  const [loadingCoupons, setLoadingCoupons] = useState(false);
+  const [copiedCode, setCopiedCode] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (activeSubTab === "promotions") {
+      async function fetchCoupons() {
+        setLoadingCoupons(true);
+        try {
+          const res = await axiosClient.get("/coupons");
+          if (res.data?.success && Array.isArray(res.data.data)) {
+            setStoreCoupons(res.data.data);
+          }
+        } catch (e) {
+          console.error("Lỗi lấy danh sách coupons:", e);
+        } finally {
+          setLoadingCoupons(false);
+        }
+      }
+      fetchCoupons();
+    }
+  }, [activeSubTab]);
+
+  const handleCopyCode = (code: string, label: string) => {
+    addVoucher(code, label);
+    setCopiedCode(code);
+    setTimeout(() => setCopiedCode(null), 2000);
+  };
   const handleClaimVoucher = useCallback(async () => {
     if (!pendingVoucherStage) return;
     setClaimedVouchers(prev =>
       prev.includes(pendingVoucherStage) ? prev : [...prev, pendingVoucherStage]
     );
     const meta = STAGE_META[pendingVoucherStage];
+    addVoucher(meta.voucher.code, meta.voucher.label, meta.desc);
     setPendingVoucherStage(null);
     if (notifOn) {
       await sendVoucherReadyNotification(meta.voucher.label, meta.label);
     }
-  }, [pendingVoucherStage, notifOn]);
+  }, [pendingVoucherStage, notifOn, addVoucher]);
 
   // ── Handler: Tiếp tục trồng ───────────────────────────────────────────────
   const handleContinuePlanting = useCallback(() => {
@@ -638,226 +671,334 @@ export default function EventScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* ── Sub Tab Bar ─────────────────────────────────────────────────── */}
+      <View style={styles.subTabRow}>
+        <TouchableOpacity
+          style={[styles.subTabBtn, activeSubTab === "game" && styles.subTabBtnActive]}
+          onPress={() => setActiveSubTab("game")}
+        >
+          <Text style={[styles.subTabText, activeSubTab === "game" && styles.subTabTextActive]}>
+            🌱 Nuôi Cây Ảo
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.subTabBtn, activeSubTab === "promotions" && styles.subTabBtnActive]}
+          onPress={() => setActiveSubTab("promotions")}
+        >
+          <Text style={[styles.subTabText, activeSubTab === "promotions" && styles.subTabTextActive]}>
+            🎁 Kho Khuyến Mãi ({collectedVouchers.length + storeCoupons.length})
+          </Text>
+        </TouchableOpacity>
+      </View>
+
       {/* ── Scrollable Content ──────────────────────────────────────────────── */}
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* ── Plant Card ──────────────────────────────────────────────────── */}
-        <View style={[styles.plantCard, { borderColor: meta.color + "22" }]}>
-          {/* Stage bar */}
-          <View style={[styles.stageBar, { borderBottomColor: meta.bg }]}>
-            <View style={styles.stageBadgeRow}>
-              <View style={[styles.stagePulse, { backgroundColor: meta.color }]} />
-              <Text style={[styles.stageLabel, { color: meta.color }]}>{meta.label}</Text>
-            </View>
-            <View style={[styles.stageChip, { backgroundColor: meta.color }]}>
-              <Text style={styles.stageChipText}>Dạng {stage}/4</Text>
-            </View>
-          </View>
-
-          {/* Desc badge */}
-          <View style={[styles.descBadge, { backgroundColor: meta.bg }]}>
-            <Text style={styles.descEmoji}>{meta.emoji}</Text>
-            <Text style={[styles.descText, { color: meta.color }]}>{meta.desc}</Text>
-          </View>
-
-          {/* Plant SVG với breathing animation */}
-          <View style={styles.plantSvgContainer}>
-            <View style={[styles.plantGlow, { backgroundColor: meta.color + "18" }]} />
-            <Animated.View style={[styles.plantSvgBox, { transform: [{ scale: breatheAnim }] }]}>
-              <PlantIllustration stage={stage} />
-            </Animated.View>
-          </View>
-
-          {/* Timer & Progress */}
-          <View style={styles.progressSection}>
-            <View style={styles.progressHeader}>
-              <Text style={styles.progressLabel}>
-                {isMaxStage ? "🌺 Cây đã nở rộ hoàn toàn!" : "⏱️ Thời gian lên giai đoạn tiếp theo"}
-              </Text>
-              <Text style={[styles.progressPercent, { color: meta.color }]}>{progressPercent}%</Text>
-            </View>
-
-            {!isMaxStage && (
-              <View style={styles.timerBox}>
-                <Text style={[styles.timerText, { color: meta.color }]}>
-                  {formatTime(remainingMs)}
-                </Text>
-                <Text style={styles.timerSub}>còn lại → {meta.nextLabel}</Text>
-              </View>
-            )}
-
-            {/* Progress bar */}
-            <View style={styles.progressTrack}>
-              <Animated.View
-                style={[
-                  styles.progressFill,
-                  {
-                    width: progressWidth,
-                    backgroundColor: meta.color,
-                  },
-                ]}
-              />
-            </View>
-
-            {timeReduced > 0 && (
-              <Text style={styles.reducedTimeTag}>
-                ⚡ Đã giảm {formatTime(timeReduced)} nhờ chăm sóc
-              </Text>
-            )}
-          </View>
-
-          {/* Action Buttons */}
-          {!isMaxStage && (
-            <View style={styles.actionRow}>
-              {/* Tưới nước */}
-              <Animated.View style={[styles.actionBtnWrapper, { transform: [{ scale: waterBtnAnim }] }]}>
-                <TouchableOpacity
-                  style={[
-                    styles.actionBtn,
-                    waterTurns <= 0 && styles.actionBtnDisabled,
-                    { borderColor: waterTurns > 0 ? "#1565C040" : "#e0e0e0" },
-                  ]}
-                  onPress={handleWater}
-                  disabled={waterTurns <= 0}
-                  activeOpacity={0.8}
-                >
-                  <View style={[styles.actionIconBox, { backgroundColor: waterTurns > 0 ? "#1565C0" : "#ccc" }]}>
-                    <Droplets size={22} stroke="#fff" />
-                  </View>
-                  <Text style={[styles.actionLabel, { color: waterTurns > 0 ? "#1565C0" : "#bbb" }]}>
-                    Tưới nước
-                  </Text>
-                  <Text style={styles.actionTurns}>{waterTurns}/{waterMax} lượt</Text>
-                  <Text style={styles.actionEffect}>⏱ -30 phút</Text>
-                </TouchableOpacity>
-              </Animated.View>
-
-              {/* Bón phân */}
-              <Animated.View style={[styles.actionBtnWrapper, { transform: [{ scale: fertBtnAnim }] }]}>
-                <TouchableOpacity
-                  style={[
-                    styles.actionBtn,
-                    fertTurns <= 0 && styles.actionBtnDisabled,
-                    { borderColor: fertTurns > 0 ? "#2E7D3240" : "#e0e0e0" },
-                  ]}
-                  onPress={handleFert}
-                  disabled={fertTurns <= 0}
-                  activeOpacity={0.8}
-                >
-                  <View style={[styles.actionIconBox, { backgroundColor: fertTurns > 0 ? "#2E7D32" : "#ccc" }]}>
-                    <Leaf size={22} stroke="#fff" />
-                  </View>
-                  <Text style={[styles.actionLabel, { color: fertTurns > 0 ? "#2E7D32" : "#bbb" }]}>
-                    Bón phân
-                  </Text>
-                  <Text style={styles.actionTurns}>{fertTurns}/{fertMax} lượt</Text>
-                  <Text style={styles.actionEffect}>⏱ -60 phút</Text>
-                </TouchableOpacity>
-              </Animated.View>
-            </View>
-          )}
-        </View>
-
-        {/* ── Voucher Rewards Section ─────────────────────────────────────── */}
-        <View style={styles.rewardCard}>
-          <View style={styles.rewardHeader}>
-            <View style={styles.rewardIconBox}>
-              <Gift size={16} stroke="#fff" />
-            </View>
-            <View>
-              <Text style={styles.rewardTitle}>Phần thưởng từng giai đoạn</Text>
-              <Text style={styles.rewardSub}>Hoàn thành mỗi giai đoạn để nhận</Text>
-            </View>
-          </View>
-
-          {([1, 2, 3, 4] as StageKey[]).map((s) => {
-            const sm = STAGE_META[s];
-            const claimed = claimedVouchers.includes(s);
-            const current = stage === s;
-            const unlocked = stage > s || (stage === s && isMaxStage);
-            return (
-              <View key={s} style={[
-                styles.rewardRow,
-                current && styles.rewardRowCurrent,
-                claimed && styles.rewardRowClaimed,
-              ]}>
-                <Text style={styles.rewardEmoji}>{sm.emoji}</Text>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.rewardRowLabel}>{sm.label}</Text>
-                  <Text style={styles.rewardRowVoucher}>{sm.voucher.label}</Text>
+        {activeSubTab === "game" ? (
+          <>
+            {/* ── Plant Card ──────────────────────────────────────────────────── */}
+            <View style={[styles.plantCard, { borderColor: meta.color + "22" }]}>
+              {/* Stage bar */}
+              <View style={[styles.stageBar, { borderBottomColor: meta.bg }]}>
+                <View style={styles.stageBadgeRow}>
+                  <View style={[styles.stagePulse, { backgroundColor: meta.color }]} />
+                  <Text style={[styles.stageLabel, { color: meta.color }]}>{meta.label}</Text>
                 </View>
-                {claimed ? (
-                  <View style={styles.rewardClaimedTag}>
-                    <Text style={styles.rewardClaimedText}>Đã nhận ✓</Text>
-                  </View>
-                ) : current && isMaxStage ? (
-                  <TouchableOpacity
-                    style={styles.rewardClaimBtn}
-                    onPress={() => setPendingVoucherStage(s)}
-                  >
-                    <Text style={styles.rewardClaimBtnText}>Nhận</Text>
-                  </TouchableOpacity>
-                ) : (
-                  <View style={[styles.rewardLockTag, { opacity: unlocked ? 1 : 0.4 }]}>
-                    <Text style={styles.rewardLockText}>{unlocked ? "Sẵn sàng" : "🔒 Chờ"}</Text>
+                <View style={[styles.stageChip, { backgroundColor: meta.color }]}>
+                  <Text style={styles.stageChipText}>Dạng {stage}/4</Text>
+                </View>
+              </View>
+
+              {/* Desc badge */}
+              <View style={[styles.descBadge, { backgroundColor: meta.bg }]}>
+                <Text style={styles.descEmoji}>{meta.emoji}</Text>
+                <Text style={[styles.descText, { color: meta.color }]}>{meta.desc}</Text>
+              </View>
+
+              {/* Plant SVG với breathing animation */}
+              <View style={styles.plantSvgContainer}>
+                <View style={[styles.plantGlow, { backgroundColor: meta.color + "18" }]} />
+                <Animated.View style={[styles.plantSvgBox, { transform: [{ scale: breatheAnim }] }]}>
+                  <PlantIllustration stage={stage} />
+                </Animated.View>
+              </View>
+
+              {/* Timer & Progress */}
+              <View style={styles.progressSection}>
+                <View style={styles.progressHeader}>
+                  <Text style={styles.progressLabel}>
+                    {isMaxStage ? "🌺 Cây đã nở rộ hoàn toàn!" : "⏱️ Thời gian lên giai đoạn tiếp theo"}
+                  </Text>
+                  <Text style={[styles.progressPercent, { color: meta.color }]}>{progressPercent}%</Text>
+                </View>
+
+                {!isMaxStage && (
+                  <View style={styles.timerBox}>
+                    <Text style={[styles.timerText, { color: meta.color }]}>
+                      {formatTime(remainingMs)}
+                    </Text>
+                    <Text style={styles.timerSub}>còn lại → {meta.nextLabel}</Text>
                   </View>
                 )}
-              </View>
-            );
-          })}
-        </View>
 
-        {/* ── Đã nhận Voucher ──────────────────────────────────────────────── */}
-        {claimedVouchers.length > 0 && (
-          <View style={styles.claimedSection}>
-            <Text style={styles.claimedTitle}>🎫 Voucher của bạn</Text>
-            {claimedVouchers.map(s => (
-              <ClaimedVoucherCard key={s} stage={s} />
-            ))}
+                {/* Progress bar */}
+                <View style={styles.progressTrack}>
+                  <Animated.View
+                    style={[
+                      styles.progressFill,
+                      {
+                        width: progressWidth,
+                        backgroundColor: meta.color,
+                      },
+                    ]}
+                  />
+                </View>
+
+                {timeReduced > 0 && (
+                  <Text style={styles.reducedTimeTag}>
+                    ⚡ Đã giảm {formatTime(timeReduced)} nhờ chăm sóc
+                  </Text>
+                )}
+              </View>
+
+              {/* Action Buttons */}
+              {!isMaxStage && (
+                <View style={styles.actionRow}>
+                  {/* Tưới nước */}
+                  <Animated.View style={[styles.actionBtnWrapper, { transform: [{ scale: waterBtnAnim }] }]}>
+                    <TouchableOpacity
+                      style={[
+                        styles.actionBtn,
+                        waterTurns <= 0 && styles.actionBtnDisabled,
+                        { borderColor: waterTurns > 0 ? "#1565C040" : "#e0e0e0" },
+                      ]}
+                      onPress={handleWater}
+                      disabled={waterTurns <= 0}
+                      activeOpacity={0.8}
+                    >
+                      <View style={[styles.actionIconBox, { backgroundColor: waterTurns > 0 ? "#1565C0" : "#ccc" }]}>
+                        <Droplets size={22} stroke="#fff" />
+                      </View>
+                      <Text style={[styles.actionLabel, { color: waterTurns > 0 ? "#1565C0" : "#bbb" }]}>
+                        Tưới nước
+                      </Text>
+                      <Text style={styles.actionTurns}>{waterTurns}/{waterMax} lượt</Text>
+                      <Text style={styles.actionEffect}>⏱ -30 phút</Text>
+                    </TouchableOpacity>
+                  </Animated.View>
+
+                  {/* Bón phân */}
+                  <Animated.View style={[styles.actionBtnWrapper, { transform: [{ scale: fertBtnAnim }] }]}>
+                    <TouchableOpacity
+                      style={[
+                        styles.actionBtn,
+                        fertTurns <= 0 && styles.actionBtnDisabled,
+                        { borderColor: fertTurns > 0 ? "#2E7D3240" : "#e0e0e0" },
+                      ]}
+                      onPress={handleFert}
+                      disabled={fertTurns <= 0}
+                      activeOpacity={0.8}
+                    >
+                      <View style={[styles.actionIconBox, { backgroundColor: fertTurns > 0 ? "#2E7D32" : "#ccc" }]}>
+                        <Leaf size={22} stroke="#fff" />
+                      </View>
+                      <Text style={[styles.actionLabel, { color: fertTurns > 0 ? "#2E7D32" : "#bbb" }]}>
+                        Bón phân
+                      </Text>
+                      <Text style={styles.actionTurns}>{fertTurns}/{fertMax} lượt</Text>
+                      <Text style={styles.actionEffect}>⏱ -60 phút</Text>
+                    </TouchableOpacity>
+                  </Animated.View>
+                </View>
+              )}
+            </View>
+
+            {/* ── Voucher Rewards Section ─────────────────────────────────────── */}
+            <View style={styles.rewardCard}>
+              <View style={styles.rewardHeader}>
+                <View style={styles.rewardIconBox}>
+                  <Gift size={16} stroke="#fff" />
+                </View>
+                <View>
+                  <Text style={styles.rewardTitle}>Phần thưởng từng giai đoạn</Text>
+                  <Text style={styles.rewardSub}>Hoàn thành mỗi giai đoạn để nhận</Text>
+                </View>
+              </View>
+
+              {([1, 2, 3, 4] as StageKey[]).map((s) => {
+                const sm = STAGE_META[s];
+                const claimed = claimedVouchers.includes(s);
+                const current = stage === s;
+                const unlocked = stage > s || (stage === s && isMaxStage);
+                return (
+                  <View key={s} style={[
+                    styles.rewardRow,
+                    current && styles.rewardRowCurrent,
+                    claimed && styles.rewardRowClaimed,
+                  ]}>
+                    <Text style={styles.rewardEmoji}>{sm.emoji}</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.rewardRowLabel}>{sm.label}</Text>
+                      <Text style={styles.rewardRowVoucher}>{sm.voucher.label}</Text>
+                    </View>
+                    {claimed ? (
+                      <View style={styles.rewardClaimedTag}>
+                        <Text style={styles.rewardClaimedText}>Đã nhận ✓</Text>
+                      </View>
+                    ) : current && isMaxStage ? (
+                      <TouchableOpacity
+                        style={styles.rewardClaimBtn}
+                        onPress={() => setPendingVoucherStage(s)}
+                      >
+                        <Text style={styles.rewardClaimBtnText}>Nhận</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <View style={[styles.rewardLockTag, { opacity: unlocked ? 1 : 0.4 }]}>
+                        <Text style={styles.rewardLockText}>{unlocked ? "Sẵn sàng" : "🔒 Chờ"}</Text>
+                      </View>
+                    )}
+                  </View>
+                );
+              })}
+            </View>
+
+            {/* ── Đã nhận Voucher ──────────────────────────────────────────────── */}
+            {claimedVouchers.length > 0 && (
+              <View style={styles.claimedSection}>
+                <Text style={styles.claimedTitle}>🎫 Voucher của bạn</Text>
+                {claimedVouchers.map(s => (
+                  <ClaimedVoucherCard key={s} stage={s} />
+                ))}
+              </View>
+            )}
+
+            {/* ── Missions Button ──────────────────────────────────────────────── */}
+            <TouchableOpacity
+              style={styles.missionBtn}
+              onPress={() => setMissionOpen(true)}
+              activeOpacity={0.85}
+            >
+              <View style={styles.missionBtnIcon}>
+                <Star size={20} stroke="#2E7D32" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.missionBtnTitle}>Nhiệm vụ hằng ngày</Text>
+                <Text style={styles.missionBtnSub}>
+                  {missions.filter(Boolean).length}/{MISSION_DATA.length} nhiệm vụ · Nhận thêm lượt tưới & bón
+                </Text>
+              </View>
+              <View style={styles.missionDots}>
+                {MISSION_DATA.map((_, i) => (
+                  <View key={i} style={[styles.missionDot, { backgroundColor: missions[i] ? "#2E7D32" : "#E0E0E0" }]} />
+                ))}
+              </View>
+              <ChevronRight size={18} stroke="#A5D6A7" />
+            </TouchableOpacity>
+
+            {/* ── Notification Card ────────────────────────────────────────────── */}
+            <View style={styles.notifCard}>
+              <View style={styles.notifIconBox}>
+                <Bell size={20} stroke="#fff" />
+              </View>
+              <Text style={styles.notifText}>
+                Nhận thông báo nhắc tưới cây mỗi ngày và khi cây lên giai đoạn mới!
+              </Text>
+              <TouchableOpacity
+                style={[styles.notifToggle, { backgroundColor: notifOn ? "#2E7D32" : "#1565C0" }]}
+                onPress={handleToggleNotif}
+              >
+                <Text style={styles.notifToggleText}>{notifOn ? "Bật ✓" : "Bật"}</Text>
+              </TouchableOpacity>
+            </View>
+          </>
+        ) : (
+          /* ── Khuyến Mãi Tab ───────────────────────────────────────────────────── */
+          <View>
+            {/* Voucher đã tích lũy từ cây ảo */}
+            <Text style={styles.promoSectionTitle}>🎟️ Ví Voucher của bạn ({collectedVouchers.length})</Text>
+            {collectedVouchers.length === 0 ? (
+              <View style={styles.emptyVoucherBox}>
+                <Text style={styles.emptyVoucherText}>Chưa có voucher nào. Hãy nuôi cây để đổi voucher!</Text>
+              </View>
+            ) : (
+              collectedVouchers.map((v, idx) => (
+                <View key={idx} style={styles.couponCard}>
+                  <View style={styles.couponLeft}>
+                    <View style={styles.couponBadge}>
+                      <Text style={styles.couponBadgeText}>🌿 Đã lưu từ cây ảo</Text>
+                    </View>
+                    <Text style={styles.couponCodeText}>{v.code}</Text>
+                    <Text style={styles.couponDesc}>{v.label} - {v.discountDesc || "Được áp dụng tại Checkout"}</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={[styles.copyBtn, copiedCode === v.code && styles.copyBtnSuccess]}
+                    onPress={() => handleCopyCode(v.code, v.label)}
+                  >
+                    {copiedCode === v.code ? (
+                      <>
+                        <CheckCircle2 size={14} stroke="#fff" />
+                        <Text style={styles.copyBtnText}>Đã lấy ✓</Text>
+                      </>
+                    ) : (
+                      <>
+                        <Copy size={14} stroke="#fff" />
+                        <Text style={styles.copyBtnText}>Sao chép</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              ))
+            )}
+
+            {/* Khuyến mãi từ hệ thống */}
+            <Text style={styles.promoSectionTitle}>🔥 Ưu Đãi Cửa Hàng</Text>
+            {loadingCoupons ? (
+              <ActivityIndicator size="large" color="#2E7D32" style={{ marginVertical: 20 }} />
+            ) : storeCoupons.length === 0 ? (
+              <View style={styles.emptyVoucherBox}>
+                <Text style={styles.emptyVoucherText}>Hiện chưa có khuyến mãi mới.</Text>
+              </View>
+            ) : (
+              storeCoupons.map((c) => {
+                const discountText =
+                  c.loai_giam_gia === "phan_tram"
+                    ? `Giảm ${c.gia_tri_giam}%`
+                    : `Giảm ${parseFloat(c.gia_tri_giam).toLocaleString("vi-VN")}đ`;
+                const isCopied = copiedCode === c.ma_code;
+                return (
+                  <View key={c.id} style={styles.couponCard}>
+                    <View style={styles.couponLeft}>
+                      <View style={[styles.couponBadge, { backgroundColor: "#FFF3E0" }]}>
+                        <Text style={[styles.couponBadgeText, { color: "#E65100" }]}>{discountText}</Text>
+                      </View>
+                      <Text style={styles.couponCodeText}>{c.ma_code}</Text>
+                      <Text style={styles.couponDesc}>{c.mo_ta || "Áp dụng cho mọi đơn hàng"}</Text>
+                    </View>
+                    <TouchableOpacity
+                      style={[styles.copyBtn, isCopied && styles.copyBtnSuccess]}
+                      onPress={() => handleCopyCode(c.ma_code, `${discountText} (${c.ma_code})`)}
+                    >
+                      {isCopied ? (
+                        <>
+                          <CheckCircle2 size={14} stroke="#fff" />
+                          <Text style={styles.copyBtnText}>Đã lấy ✓</Text>
+                        </>
+                      ) : (
+                        <>
+                          <Copy size={14} stroke="#fff" />
+                          <Text style={styles.copyBtnText}>Sao chép</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                );
+              })
+            )}
           </View>
         )}
-
-        {/* ── Missions Button ──────────────────────────────────────────────── */}
-        <TouchableOpacity
-          style={styles.missionBtn}
-          onPress={() => setMissionOpen(true)}
-          activeOpacity={0.85}
-        >
-          <View style={styles.missionBtnIcon}>
-            <Star size={20} stroke="#2E7D32" />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.missionBtnTitle}>Nhiệm vụ hằng ngày</Text>
-            <Text style={styles.missionBtnSub}>
-              {missions.filter(Boolean).length}/{MISSION_DATA.length} nhiệm vụ · Nhận thêm lượt tưới & bón
-            </Text>
-          </View>
-          <View style={styles.missionDots}>
-            {MISSION_DATA.map((_, i) => (
-              <View key={i} style={[styles.missionDot, { backgroundColor: missions[i] ? "#2E7D32" : "#E0E0E0" }]} />
-            ))}
-          </View>
-          <ChevronRight size={18} stroke="#A5D6A7" />
-        </TouchableOpacity>
-
-        {/* ── Notification Card ────────────────────────────────────────────── */}
-        <View style={styles.notifCard}>
-          <View style={styles.notifIconBox}>
-            <Bell size={20} stroke="#fff" />
-          </View>
-          <Text style={styles.notifText}>
-            Nhận thông báo nhắc tưới cây mỗi ngày và khi cây lên giai đoạn mới!
-          </Text>
-          <TouchableOpacity
-            style={[styles.notifToggle, { backgroundColor: notifOn ? "#2E7D32" : "#1565C0" }]}
-            onPress={handleToggleNotif}
-          >
-            <Text style={styles.notifToggleText}>{notifOn ? "Bật ✓" : "Bật"}</Text>
-          </TouchableOpacity>
-        </View>
       </ScrollView>
 
       {/* ── Voucher Dialog ──────────────────────────────────────────────────── */}
@@ -1259,4 +1400,119 @@ const styles = StyleSheet.create({
     borderColor: "#A5D6A7",
   },
   sheetCloseBtnText: { color: "#2E7D32", fontWeight: "800", fontSize: 14 },
+
+  // Sub Tab Styles
+  subTabRow: {
+    flexDirection: "row",
+    backgroundColor: "#EDF3E8",
+    borderRadius: 16,
+    padding: 4,
+    marginHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  subTabBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: "center",
+    borderRadius: 12,
+  },
+  subTabBtnActive: {
+    backgroundColor: "#fff",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  subTabText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#6B7F6B",
+  },
+  subTabTextActive: {
+    color: "#2E7D32",
+    fontWeight: "700",
+  },
+  promoSectionTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#1A2E1A",
+    marginTop: 16,
+    marginBottom: 12,
+  },
+  emptyVoucherBox: {
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    padding: 16,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#E5EBE1",
+    marginBottom: 12,
+  },
+  emptyVoucherText: {
+    color: "#888",
+    fontSize: 13,
+  },
+  couponCard: {
+    backgroundColor: "#fff",
+    borderRadius: 18,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#E5EBE1",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    elevation: 1,
+  },
+  couponLeft: {
+    flex: 1,
+    marginRight: 12,
+  },
+  couponBadge: {
+    alignSelf: "flex-start",
+    backgroundColor: "#E8F5E9",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    marginBottom: 6,
+  },
+  couponBadgeText: {
+    color: "#2E7D32",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  couponCodeText: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#1A2E1A",
+    letterSpacing: 0.5,
+  },
+  couponDesc: {
+    fontSize: 12,
+    color: "#666",
+    marginTop: 4,
+  },
+  copyBtn: {
+    backgroundColor: "#2E7D32",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  copyBtnSuccess: {
+    backgroundColor: "#388E3C",
+  },
+  copyBtnText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "700",
+  },
 });
