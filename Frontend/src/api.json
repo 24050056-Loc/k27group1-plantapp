@@ -1,5 +1,5 @@
 {
-  "baseUrl": "http://192.168.2.64:8080",
+  "baseUrl": "http://localhost:8080",
   "tokenStorageKey": "token",
   "defaultHeaders": {
     "Content-Type": "application/json"
@@ -8,8 +8,8 @@
     "authLogin": "/auth/login",
     "authRegister": "/auth/register",
     "categories": "/categories",
-    "products": "/product",
-    "featuredProducts": "/product/featured",
+    "products": "/products",
+    "featuredProducts": "/products/featured",
     "orders": "/order",
     "users": "/users",
     "cart": "/cart"
