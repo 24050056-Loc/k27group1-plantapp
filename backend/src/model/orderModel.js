@@ -1,81 +1,77 @@
-const pool = require('../db');
+const pool = require('../db.js'); // Hãy đảm bảo đường dẫn tới file kết nối DB này chính xác
 
 const Order = {
-    // 1. Lấy toàn bộ đơn hàng
+    // 1. Lấy toàn bộ đơn hàng (Đã sửa chuẩn cột ngay_dat_hang)
     getAll: async () => {
-        const sql = `SELECT * FROM orders ORDER BY orderDate DESC`;
-        const [rows] = await pool.execute(sql);
+        const query = 'SELECT * FROM orders ORDER BY ngay_dat_hang DESC';
+
+        // Thêm dòng này vào để xem Terminal có in ra không
+        console.log("=== HỆ THỐNG ĐANG CHẠY CÂU LỆNH SQL NÀY: ===", query);
+
+        const [rows] = await pool.execute(query);
         return rows;
     },
 
-    // 2. Lấy chi tiết 1 đơn hàng
+    // 2. Tìm chi tiết một đơn hàng theo ID tổng quan
     findById: async (id) => {
-        const sql = `SELECT * FROM orders WHERE id = ?`;
-        const [rows] = await pool.execute(sql, [id]);
+        const query = 'SELECT * FROM orders WHERE id = ?';
+        const [rows] = await pool.execute(query, [id]);
+        if (rows.length === 0) return null;
         return rows[0];
     },
 
-    // 3. Cập nhật trạng thái
+    // 3. Cập nhật trạng thái đơn hàng (Khớp cột trang_thai)
     updateStatus: async (id, status) => {
-        const sql = `UPDATE orders SET status = ? WHERE id = ?`;
-        await pool.execute(sql, [status, id]);
-        return await Order.findById(id); 
+        const query = 'UPDATE orders SET trang_thai = ? WHERE id = ?';
+        const [result] = await pool.execute(query, [status, id]);
+        if (result.affectedRows === 0) return null;
+        return { id, status };
     },
 
-    // 4. Tạo đơn hàng mới (ĐÃ THÊM VÀ FIX LỖI TÊN BIẾN)
-    // Tạo đơn hàng mới - Đã sửa lỗi Unknown column khớp với Database
+    // 4. Tạo mới thông tin chung của đơn hàng
     create: async (orderData) => {
-        const { user_id, tong_tien_hang, dia_chi_giao_hang, phuong_thuc_thanh_toan, trang_thai, items } = orderData;
-        const connection = await pool.getConnection();
-        
-        try {
-            await connection.beginTransaction();
-            
-            // Dùng trang_thai từ frontend, mặc định là 'cho_duyet' nếu không có
-            const finalStatus = trang_thai || 'cho_duyet';
-            const finalPayment = phuong_thuc_thanh_toan === 'bank_transfer' ? 'bank_transfer' : 'cod';
-            
-            const sqlOrder = `
-                INSERT INTO orders (user_id, tong_tien_hang, dia_chi_giao_hang, phuong_thuc_thanh_toan, trang_thai) 
-                VALUES (?, ?, ?, ?, ?)
-            `;
-            const [result] = await connection.execute(sqlOrder, [
-                user_id || null, 
-                tong_tien_hang || 0, 
-                dia_chi_giao_hang || null,
-                finalPayment,
-                finalStatus
+        const { id, user_id, coupon_id, tong_tien_hang, so_tien_giam_gia, dia_chi_giao_hang } = orderData;
+
+        const query = `
+            INSERT INTO orders (id, user_id, coupon_id, tong_tien_hang, so_tien_giam_gia, dia_chi_giao_hang, trang_thai) 
+            VALUES (?, ?, ?, ?, ?, ?, 'cho_duyet')
+        `;
+
+        await pool.execute(query, [
+            id,
+            user_id,
+            coupon_id || null,
+            tong_tien_hang,
+            so_tien_giam_gia || 0,
+            dia_chi_giao_hang
+        ]);
+
+        return id;
+    },
+
+    // 5. Lưu chi tiết các sản phẩm được mua vào bảng order_items
+    createItems: async (orderId, items) => {
+        const query = `
+            INSERT INTO order_items (order_id, product_id, so_luong, gia_luc_mua) 
+            VALUES (?, ?, ?, ?)
+        `;
+
+        for (const item of items) {
+            await pool.execute(query, [
+                orderId,
+                item.product_id,
+                item.so_luong,
+                item.gia_luc_mua
             ]);
-
-            
-            const orderId = result.insertId;
-
-            if (items && items.length > 0) {
-                for (let item of items) {
-                    const [stockRows] = await connection.execute(`SELECT so_luong_kho, ten_san_pham FROM products WHERE id = ?`, [item.product_id]);
-                    if (stockRows.length === 0) throw new Error(`Sản phẩm ID ${item.product_id} không tồn tại`);
-                    if (stockRows[0].so_luong_kho < item.so_luong) throw new Error(`Sản phẩm ${stockRows[0].ten_san_pham} không đủ số lượng trong kho`);
-
-                    await connection.execute(
-                        `INSERT INTO order_items (order_id, product_id, so_luong, gia_luc_mua) VALUES (?, ?, ?, ?)`,
-                        [orderId, item.product_id, item.so_luong, item.gia_luc_mua]
-                    );
-
-                    await connection.execute(
-                        `UPDATE products SET so_luong_kho = so_luong_kho - ? WHERE id = ?`,
-                        [item.so_luong, item.product_id]
-                    );
-                }
-            }
-
-            await connection.commit();
-            return orderId;
-        } catch (error) {
-            await connection.rollback();
-            throw error;
-        } finally {
-            connection.release();
         }
+        return true;
+    },
+
+    // 6. Lấy danh sách sản phẩm thuộc đơn hàng
+    getItemsByOrderId: async (orderId) => {
+        const query = 'SELECT * FROM order_items WHERE order_id = ?';
+        const [rows] = await pool.execute(query, [orderId]);
+        return rows;
     }
 };
 
