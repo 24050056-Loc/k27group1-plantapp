@@ -45,6 +45,7 @@ import {
   ShoppingBag as ShoppingBagIcon,
 } from "lucide-react-native";
 import { AuthProvider, useAuth } from "../context/AuthContext";
+import { VoucherProvider } from "../context/VoucherContext";
 import { QueryProvider } from "./QueryProvider";
 import { Product } from "../types";
 
@@ -93,7 +94,9 @@ export default function App() {
   return (
     <QueryProvider>
       <AuthProvider>
-        <AppContent />
+        <VoucherProvider>
+          <AppContent />
+        </VoucherProvider>
       </AuthProvider>
     </QueryProvider>
   );
@@ -109,6 +112,7 @@ function AppContent() {
   );
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [activeOrderId, setActiveOrderId] = useState<number | null>(null);
+  const [checkoutAmount, setCheckoutAmount] = useState<number>(0);
   const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
   const [mallCategoryId, setMallCategoryId] = useState<number | null>(null);
 
@@ -137,9 +141,9 @@ function AppContent() {
     setScreen("productDetail");
   };
 
-  const handleCheckoutSuccess = (orderId: number) => {
+  const handleCheckoutSuccess = (orderId: number, totalAmount: number) => {
     setActiveOrderId(orderId);
-    setScreen("checkout"); // Vẫn ở checkout nhưng sẽ dẫn tới COD hoặc QR
+    setCheckoutAmount(totalAmount);
   };
 
   const handleLogout = () => {
@@ -187,9 +191,9 @@ function AppContent() {
           />
         );
       case "paymentCOD":
-        return <PaymentCODScreen orderId={activeOrderId} onBack={goToMain} />;
+        return <PaymentCODScreen orderId={activeOrderId} amount={checkoutAmount} onBack={goToMain} />;
       case "paymentQR":
-        return <PaymentQRScreen orderId={activeOrderId} onBack={goToMain} />;
+        return <PaymentQRScreen orderId={activeOrderId} amount={checkoutAmount} onBack={goToMain} />;
       case "productDetail":
         return (
           <ProductDetailScreen

@@ -42,10 +42,31 @@ router.post('/', authenticateToken, async (req, res) => {
             tong_tien += Number(item.gia_tien) * item.so_luong;
         }
 
+        // 3b. Validate và tính mã giảm giá (nếu có)
+        let so_tien_giam = 0;
+        let ma_giam_gia = req.body.ma_giam_gia ? req.body.ma_giam_gia.trim() : null;
+
+        if (ma_giam_gia) {
+            const [couponRows] = await connection.execute(
+                'SELECT * FROM coupons WHERE ma_code = ? AND dang_ap_dung = TRUE',
+                [ma_giam_gia]
+            );
+            if (couponRows.length > 0) {
+                const coupon = couponRows[0];
+                so_tien_giam = coupon.loai_giam_gia === 'phan_tram'
+                    ? Math.min(tong_tien, tong_tien * (Number(coupon.gia_tri_giam) / 100))
+                    : Math.min(tong_tien, Number(coupon.gia_tri_giam));
+            } else {
+                ma_giam_gia = null; // Mã không hợp lệ — bỏ qua
+            }
+        }
+
+        const tong_thanh_toan = Math.max(0, tong_tien - so_tien_giam);
+
         // 4. Tạo hóa đơn (Orders)
         const [orderResult] = await connection.execute(
-            `INSERT INTO orders (user_id, tong_tien_hang, dia_chi_giao_hang) VALUES (?, ?, ?)`,
-            [userId, tong_tien, dia_chi_giao_hang]
+            `INSERT INTO orders (user_id, tong_tien_hang, dia_chi_giao_hang, ma_giam_gia, phi_van_chuyen) VALUES (?, ?, ?, ?, ?)`,
+            [userId, tong_thanh_toan, dia_chi_giao_hang, ma_giam_gia || null, 0]
         );
         const orderId = orderResult.insertId;
 
@@ -74,7 +95,14 @@ router.post('/', authenticateToken, async (req, res) => {
 
         // Hoàn tất transaction thành công
         await connection.commit();
-        res.json({ success: true, message: "Đặt hàng thành công!", order_id: orderId });
+        res.json({
+            success: true,
+            message: "Đặt hàng thành công!",
+            order_id: orderId,
+            tong_tien_hang: tong_tien,
+            so_tien_giam: so_tien_giam,
+            tong_thanh_toan: tong_thanh_toan,
+        });
 
     } catch (error) {
         // Hoàn tác nếu có bất kỳ lỗi nào xảy ra
