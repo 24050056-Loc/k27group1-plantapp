@@ -11,7 +11,7 @@ router.post('/admin/add', verifyToken, isAdmin, productController.addPlant);
 router.put('/admin/edit/:id', verifyToken, isAdmin, productController.updatePlant);
 router.delete('/admin/delete/:id', verifyToken, isAdmin, productController.deletePlant);
 
-module.exports = router;
+
 
 // 1. API CHO TRANG SẢN PHẨM (Lấy TẤT CẢ cây trong Database)
 // Frontend trang sản phẩm sẽ gọi: fetch('http://localhost:8080/product')

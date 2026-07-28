@@ -7,6 +7,7 @@ const PORT = process.env.PORT || 8080;
 
 // Middleware QUAN TRỌNG
 app.use(express.json());
+app.use(express.urlencoded({ extended: true })); // Cho phép nhận dữ liệu dạng x-www-form-urlencoded
 app.use(cors());
 
 // ==========================================
@@ -26,9 +27,10 @@ const couponsRoutes = require('./src/coupons');
 const promotional_eventsRoutes = require('./src/promotional_events');
 const minigameRoutes = require('./src/minigame');
 const paymentRoutes = require('./src/payment');
-const momoRoutes = require('./src/momo');
+const { router: momoRoutes } = require('./src/momo');
 const waterRoutes = require('./src/water');
 const cronjobRoutes = require('./src/cronjob');
+const communityRoutes = require('./src/community');
 
 // Các route Admin
 const adminRoutes = require('./src/admin');
@@ -57,7 +59,7 @@ app.use('/payment', paymentRoutes);
 app.use('/momo', momoRoutes);
 app.use('/water', waterRoutes);
 app.use('/cronjob', cronjobRoutes);
-
+app.use('/community', communityRoutes);
 
 // Cụm Route Admin
 app.use('/admin', adminRoutes);

@@ -2,8 +2,8 @@ const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
 const OrderModel = require('./model/orderModel');
-const { createMomoPayment } = require('./momo');
 
+const { createMomoPayment } = require('./momo');
 // Các thông số cấu hình Momo (Nên để trong file .env để bảo mật)
 const accessKey = process.env.MOMO_ACCESS_KEY || 'YOUR_ACCESS_KEY';
 const secretKey = process.env.MOMO_SECRET_KEY || 'YOUR_SECRET_KEY';
@@ -29,22 +29,24 @@ router.post('/bank', (req, res) => {
 router.post('/momo', async (req, res) => {
     try {
         const { amount, orderId, orderInfo } = req.body;
-        
-        // Sử dụng hàm createMomoPayment từ momo.js mà mình vừa viết lúc nãy
+
+        if (!amount || !orderId) {
+            return res.status(400).json({ success: false, message: 'Thiếu amount hoặc orderId' });
+        }
+
         const responseData = await createMomoPayment(orderId, orderInfo || `Thanh toán đơn hàng ${orderId}`, amount);
-        
-        if (responseData.payUrl) {
-            // Trả về đường dẫn để frontend chuyển hướng người dùng tới trang thanh toán Momo
+
+        if (responseData && responseData.payUrl) {
             res.json({ success: true, payUrl: responseData.payUrl });
         } else {
             res.status(400).json({ success: false, message: 'Lỗi khi tạo giao dịch Momo', data: responseData });
         }
     } catch (error) {
         console.error('Lỗi Momo:', error);
-        res.status(500).json({ success: false, message: 'Internal server error' });
+        // Trả về thông báo lỗi chi tiết để kiểm tra nguyên nhân
+        res.status(500).json({ success: false, message: error.message || 'Internal server error' });
     }
 });
-
 // 3. API Webhook (IPN) để nhận kết quả thanh toán từ Momo
 router.post('/momo-ipn', async (req, res) => {
     // Momo sẽ gọi endpoint này ở background khi khách hàng thanh toán xong
