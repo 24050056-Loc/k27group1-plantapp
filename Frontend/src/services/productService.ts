@@ -1,14 +1,14 @@
 import axiosClient from "../api/axiosClient";
 import { Product } from "../types";
 
-/** GET /product — toàn bộ sản phẩm (dùng cho Mall) */
+/** GET /products — toàn bộ sản phẩm (dùng cho Mall) */
 export async function getProducts(): Promise<Product[]> {
-  const response = await axiosClient.get("/product");
+  const response = await axiosClient.get("/products");
   return Array.isArray(response.data) ? response.data : [];
 }
 
-/** GET /product/featured — top 6 sản phẩm (dùng cho Home) */
+/** GET /products/featured — top 6 sản phẩm (dùng cho Home) */
 export async function getFeaturedProducts(): Promise<Product[]> {
-  const response = await axiosClient.get("/product/featured");
+  const response = await axiosClient.get("/products/featured");
   return Array.isArray(response.data) ? response.data : [];
 }
