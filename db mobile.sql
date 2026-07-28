@@ -129,16 +129,31 @@ INSERT INTO `products` (`id`, `category_id`, `ten_san_pham`, `ten_khoa_hoc`, `mo
 -- =========================================================================
 -- 4. BẢNG MÃ GIẢM GIÁ (COUPONS)
 -- =========================================================================
+-- Lưu tất cả mã giảm giá hiện có trong hệ thống.
+-- Có thể do game tạo, do event phát hành hoặc do admin cấp.
+-- user_id: nếu coupon thuộc về 1 người dùng cụ thể (coupon game nhận được).
+-- generated_by: xác định nguồn phát hành coupon.
+-- is_used / used_at: theo dõi coupon đã sử dụng hay chưa.
 CREATE TABLE `coupons` (
   `id` INT NOT NULL AUTO_INCREMENT,
+  `user_id` INT DEFAULT NULL,
   `ma_code` VARCHAR(20) NOT NULL,
   `loai_giam_gia` ENUM('phan_tram', 'so_tien_co_dinh') DEFAULT 'phan_tram',
   `gia_tri_giam` DECIMAL(10,2) NOT NULL,
+  `min_order_value` DECIMAL(10,2) DEFAULT 0.00,
+  `expiry_date` DATETIME DEFAULT NULL,
+  `generated_by` ENUM('game', 'event', 'admin') COLLATE utf8mb4_unicode_ci DEFAULT 'admin',
+  `is_used` TINYINT(1) DEFAULT 0,
+  `used_at` TIMESTAMP NULL DEFAULT NULL,
   `dang_ap_dung` TINYINT(1) DEFAULT 1,
+  `ngay_tao` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  UNIQUE KEY `ma_code` (`ma_code`)
+  UNIQUE KEY `ma_code` (`ma_code`),
+  KEY `idx_coupons_user` (`user_id`),
+  CONSTRAINT `coupons_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Dữ liệu mẫu cho Coupons giúp FE/BE test flow mã giảm giá.
 -- (Chưa có dữ liệu mẫu cho Coupons)
 
 
@@ -286,10 +301,18 @@ CREATE TABLE `chat_history` (
 -- =========================================================================
 -- 12. BẢNG ĐƠN HÀNG (ORDERS)
 -- =========================================================================
+-- Lưu thông tin đơn hàng và thông tin thanh toán online.
+-- payment_method: phương thức thanh toán khách chọn.
+-- payment_gateway: ghi rõ cổng thanh toán (MoMo/ZaloPay/Stripe...).
+-- payment_status: trạng thái thanh toán thực tế từ webhook.
+-- ma_giao_dich_thanh_toan: mã giao dịch trả về từ cổng thanh toán.
 CREATE TABLE `orders` (
   `id` INT NOT NULL AUTO_INCREMENT,
   `user_id` INT NOT NULL,
   `coupon_id` INT DEFAULT NULL,
+  `payment_method` ENUM('cod', 'bank_transfer', 'momo', 'zalopay', 'stripe', 'other') COLLATE utf8mb4_unicode_ci DEFAULT 'cod',
+  `payment_gateway` VARCHAR(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `payment_status` ENUM('pending', 'paid', 'failed', 'refunded') COLLATE utf8mb4_unicode_ci DEFAULT 'pending',
   `tong_tien_hang` DECIMAL(10,2) NOT NULL DEFAULT 0.00,
   `so_tien_giam_gia` DECIMAL(10,2) DEFAULT 0.00,
   `tong_thanh_toan` DECIMAL(10,2) GENERATED ALWAYS AS (`tong_tien_hang` - `so_tien_giam_gia`) STORED,
@@ -350,23 +373,51 @@ CREATE TABLE `plant_diagnoses` (
 -- =========================================================================
 -- 15. BẢNG ĐIỂM THƯỞNG TÍCH LŨY (USERS_POINTS)
 -- =========================================================================
+-- BẢNG LƯU LỊCH SỬ ĐIỂM TÍCH LUỸ
+-- Mỗi lần người dùng check-in, tưới nước, bón phân hay lên cấp sẽ tạo bản ghi ở đây.
+-- BE có thể dùng để tính điểm tổng, kiểm tra điểm danh theo ngày, và gợi ý phần thưởng.
 CREATE TABLE `users_points` (
   `id` INT NOT NULL AUTO_INCREMENT,
   `user_id` INT NOT NULL,
   `diem` INT NOT NULL DEFAULT 0,
+  `loai_diem` ENUM('checkin', 'watering', 'fertilizing', 'level_up', 'other') COLLATE utf8mb4_unicode_ci DEFAULT 'other',
   `ly_do` VARCHAR(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `ngay_thuc_hien` DATETIME DEFAULT CURRENT_TIMESTAMP,
   `ngay_tao` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  KEY `idx_points_user_date` (`user_id`, `ngay_tao`),
+  KEY `idx_points_user_date` (`user_id`, `ngay_thuc_hien`),
   CONSTRAINT `users_points_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- (Chưa có dữ liệu mẫu cho Users Points)
+INSERT INTO `users_points` (`id`, `user_id`, `diem`, `loai_diem`, `ly_do`, `ngay_thuc_hien`, `ngay_tao`) VALUES
+(1, 2, 10, 'checkin', 'Điểm danh ngày đầu', '2026-07-13 08:00:00', '2026-07-13 08:00:00'),
+(2, 2, 5, 'watering', 'Tưới cây ảo', '2026-07-14 09:30:00', '2026-07-14 09:30:00');
+
+-- BẢNG LƯU THÔNG TIN THIẾT BỊ NGƯỜI DÙNG ĐỂ GỬI PUSH NOTIFICATION
+-- device_id giúp phân biệt nhiều thiết bị của cùng một user.
+-- fcm_token dùng để gửi thông báo qua Firebase Cloud Messaging.
+CREATE TABLE `user_devices` (
+  `id` INT NOT NULL AUTO_INCREMENT,
+  `user_id` INT NOT NULL,
+  `device_id` VARCHAR(100) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `fcm_token` VARCHAR(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `platform` ENUM('android', 'ios', 'web', 'other') COLLATE utf8mb4_unicode_ci DEFAULT 'android',
+  `app_version` VARCHAR(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `os_version` VARCHAR(50) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `last_seen` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+  `is_active` TINYINT(1) DEFAULT 1,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uniq_user_device` (`user_id`, `device_id`),
+  KEY `idx_user_devices_fcm` (`fcm_token`),
+  CONSTRAINT `user_devices_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
 -- =========================================================================
 -- 16. BẢNG TRỒNG CÂY ẢO MINIGAME (VIRTUAL_PLANTS)
 -- =========================================================================
+-- BẢNG LƯU TRẠNG THÁI CÂY ẢO VÀ LỊCH TRÌNH CHĂM SÓC
+-- dùng cho mini-game nuôi cây ảo và tính toán tăng cấp, tưới nước, bón phân.
 CREATE TABLE `virtual_plants` (
   `id` INT NOT NULL AUTO_INCREMENT,
   `user_id` INT NOT NULL,
@@ -377,6 +428,8 @@ CREATE TABLE `virtual_plants` (
   `luong_phan_bon` INT DEFAULT 0,
   `lan_tuoi_cuoi` DATETIME DEFAULT NULL,
   `lan_bon_phan_cuoi` DATETIME DEFAULT NULL,
+  `next_watering_at` DATETIME DEFAULT NULL,
+  `next_fertilizing_at` DATETIME DEFAULT NULL,
   `ngay_tao` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
   `ngay_cap_nhat` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
@@ -384,7 +437,9 @@ CREATE TABLE `virtual_plants` (
   CONSTRAINT `virtual_plants_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- (Chưa có dữ liệu mẫu cho Virtual Plants)
+-- Dữ liệu mẫu cho Virtual Plants giúp test phần giao diện và logic game.
+INSERT INTO `virtual_plants` (`id`, `user_id`, `ten_cay`, `cap_do`, `tien_trinh`, `luong_nuoc`, `luong_phan_bon`, `lan_tuoi_cuoi`, `lan_bon_phan_cuoi`, `next_watering_at`, `next_fertilizing_at`, `ngay_tao`, `ngay_cap_nhat`) VALUES
+(1, 2, 'Cây Ảo Ruby', 3, 65, 2, 1, '2026-07-14 08:00:00', '2026-07-13 08:00:00', '2026-07-15 08:00:00', '2026-07-16 08:00:00', '2026-07-13 08:00:00', '2026-07-14 08:00:00');
 
 
 -- =========================================================================
