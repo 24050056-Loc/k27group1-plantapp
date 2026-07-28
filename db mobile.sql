@@ -295,6 +295,7 @@ CREATE TABLE `orders` (
   `tong_thanh_toan` DECIMAL(10,2) GENERATED ALWAYS AS (`tong_tien_hang` - `so_tien_giam_gia`) STORED,
   `trang_thai` ENUM('cho_duyet', 'dang_xu_ly', 'dang_giao', 'da_giao', 'da_huy', 'da_thu/da_xu_ly', 'da_thu/da_xac_nhan') COLLATE utf8mb4_unicode_ci DEFAULT 'cho_duyet',
   `dia_chi_giao_hang` TEXT COLLATE utf8mb4_unicode_ci NOT NULL,
+  `ma_giao_dich_thanh_toan` VARCHAR(100) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `ngay_dat_hang` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `user_id` (`user_id`),
