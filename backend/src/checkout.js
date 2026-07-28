@@ -43,7 +43,9 @@ router.post('/', authenticateToken, async (req, res) => {
         }
 
         // 3b. Validate và tính mã giảm giá (nếu có)
+        // 3b. Validate và tính mã giảm giá (nếu có)
         let so_tien_giam = 0;
+        let coupon_id = null;
         let ma_giam_gia = req.body.ma_giam_gia ? req.body.ma_giam_gia.trim() : null;
 
         if (ma_giam_gia) {
@@ -53,22 +55,22 @@ router.post('/', authenticateToken, async (req, res) => {
             );
             if (couponRows.length > 0) {
                 const coupon = couponRows[0];
+                coupon_id = coupon.id; // Lấy coupon_id để lưu vào bảng orders
                 so_tien_giam = coupon.loai_giam_gia === 'phan_tram'
                     ? Math.min(tong_tien, tong_tien * (Number(coupon.gia_tri_giam) / 100))
                     : Math.min(tong_tien, Number(coupon.gia_tri_giam));
-            } else {
-                ma_giam_gia = null; // Mã không hợp lệ — bỏ qua
             }
         }
 
-        const tong_thanh_toan = Math.max(0, tong_tien - so_tien_giam);
-
-        // 4. Tạo hóa đơn (Orders)
+        // 4. Tạo hóa đơn (Orders) - Đã cập nhật khớp với Schema bảng orders mới
+        // Lưu ý: tong_thanh_toan là cột GENERATED STORED nên MySQL sẽ tự tính, không cần INSERT
         const [orderResult] = await connection.execute(
-            `INSERT INTO orders (user_id, tong_tien_hang, dia_chi_giao_hang, ma_giam_gia, phi_van_chuyen) VALUES (?, ?, ?, ?, ?)`,
-            [userId, tong_thanh_toan, dia_chi_giao_hang, ma_giam_gia || null, 0]
+            `INSERT INTO orders (user_id, coupon_id, tong_tien_hang, so_tien_giam_gia, dia_chi_giao_hang) 
+             VALUES (?, ?, ?, ?, ?)`,
+            [userId, coupon_id, tong_tien, so_tien_giam, dia_chi_giao_hang]
         );
         const orderId = orderResult.insertId;
+        const tong_thanh_toan = Math.max(0, tong_tien - so_tien_giam);
 
         // 5. Tối ưu Queries: Cập nhật kho và chuẩn bị dữ liệu Bulk Insert cho order_items
         for (let item of cartItems) {
