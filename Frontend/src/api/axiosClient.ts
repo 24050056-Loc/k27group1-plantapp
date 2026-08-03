@@ -9,7 +9,7 @@ const axiosClient = axios.create({
     "Content-Type": "application/json",
   },
 });
-
+console.log("API Base URL:", apiConfig.baseUrl);
 /**
  * Hàm hỗ trợ set/gỡ bỏ Token Authorization cho tất cả các request Axios tiếp theo
  */

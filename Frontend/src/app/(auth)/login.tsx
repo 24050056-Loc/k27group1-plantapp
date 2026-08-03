@@ -27,6 +27,7 @@ export default function LoginScreen({ onLogin, onGoRegister }: Props) {
       }
     },
     onError: (error: any) => {
+      console.error("Login error:", error.response?.data?.message || error.message);
       setErrorMsg(error.response?.data?.message || "Không thể kết nối đến máy chủ. Vui lòng thử lại!");
     }
   });

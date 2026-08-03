@@ -11,6 +11,14 @@
     ],
     "plugins": [
       [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "image": "./assets/Tree.png",
@@ -34,7 +42,8 @@
           "androidMode": "default",
           "androidCollapsedTitle": "PlantApp 🌿"
         }
-      ]
+      ],
+      "expo-build-properties"
     ],
     "ios": {
       "supportsTablet": true
@@ -43,7 +52,11 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/Tree.png",
         "backgroundColor": "#ffffff"
-      }
+      },
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ],
+      "package": "com.TNMT.PlantApp"
     },
     "web": {
       "favicon": "./assets/Tree.png"
@@ -51,6 +64,9 @@
     "extra": {
       "router": {
         "root": "app"
+      },
+      "eas": {
+        "projectId": "fdf0b277-7f4f-4a92-bdef-66bbd1a38f47"
       }
     }
   }
