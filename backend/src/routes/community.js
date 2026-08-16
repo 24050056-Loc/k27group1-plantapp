@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const pool = require('./db');
-
+const pool = require('../db');
+// TRANG BÌNH LUẬN
 // 1. API Lấy danh sách tất cả bài viết (Kèm thông tin người đăng)
 router.get('/posts', async (req, res) => {
     try {
@@ -22,7 +22,7 @@ router.get('/posts', async (req, res) => {
 // 2. API Tạo bài viết / câu hỏi mới
 router.post('/posts', async (req, res) => {
     const { user_id, title, content, image_url } = req.body;
-    
+
     if (!user_id || !title || !content) {
         return res.status(400).json({ success: false, message: "Thiếu thông tin bắt buộc" });
     }

@@ -1,8 +1,8 @@
 const express = require('express');
 const router = express.Router();
-const productController = require('./Controller/productController');
-const { verifyToken, isAdmin } = require('./middlewares/authadmin');
-const pool = require('./db');
+const productController = require('../Controller/productController');
+const { verifyToken, isAdmin } = require('../middlewares/authadmin');
+const pool = require('../db');
 // API cho người dùng xem sản phẩm
 router.get('/', productController.getAllProducts);
 

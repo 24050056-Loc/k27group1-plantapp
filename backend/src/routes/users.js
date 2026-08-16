@@ -1,8 +1,8 @@
 const express = require('express');
 const router = express.Router();
-const pool = require('./db.js');
-const usersController = require('./Controller/usersController.js');
-const authenticateToken = require('./middlewares/authMiddleware.js');
+const pool = require('../db.js');
+const usersController = require('../Controller/usersController.js');
+const authenticateToken = require('../middlewares/authMiddleware.js');
 
 // ==========================================
 // 1. API XÁC THỰC (AUTH)

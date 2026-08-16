@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const pool = require('./db');
-const { verifyToken, isAdmin } = require('./middlewares/authadmin');
+const pool = require('../db');
+const { verifyToken, isAdmin } = require('../middlewares/authadmin');
 
 // 1. Lấy danh sách tất cả người dùng
 router.get('/', verifyToken, isAdmin, async (req, res) => {

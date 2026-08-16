@@ -3,7 +3,7 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');
 const mysql = require('mysql2/promise');
 const jwt = require('jsonwebtoken');
-const pool = require('./db.js');
+const pool = require('../db.js');
 
 const SECRET_KEY = process.env.SECRET_KEY || "cay_canh_bi_mat_123";
 

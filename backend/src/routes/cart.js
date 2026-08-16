@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const pool = require('./db.js');
-const authenticateToken = require('./middlewares/authMiddleware.js');
+const pool = require('../db.js');
+const authenticateToken = require('../middlewares/authMiddleware.js');
 
 // 1. Lấy danh sách giỏ hàng
 router.get('/', authenticateToken, async (req, res) => {

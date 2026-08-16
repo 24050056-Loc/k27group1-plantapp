@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const crypto = require('crypto');
-const OrderModel = require('./model/orderModel');
+const OrderModel = require('../model/orderModel');
 
 const { createMomoPayment } = require('./momo');
 // Các thông số cấu hình Momo (Nên để trong file .env để bảo mật)

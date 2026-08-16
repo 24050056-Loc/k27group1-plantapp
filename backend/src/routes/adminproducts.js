@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const pool = require('./db');
+const pool = require('../db');
 
 // 1. Lấy danh sách sản phẩm (có hỗ trợ filter qua query params)
 // GET /adminproducts?search=&category_id=&status=&stock=

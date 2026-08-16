@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const pool = require('./db');
+const pool = require('../db');
 
 // Lấy danh sách đơn hàng kèm tên khách (Dùng JOIN)
 router.get('/', async (req, res) => {

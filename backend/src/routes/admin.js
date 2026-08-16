@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const pool = require('./db');
-const { verifyToken, isAdmin } = require('./middlewares/authadmin');
+const pool = require('../db');
+const { verifyToken, isAdmin } = require('../middlewares/authadmin');
 
 // API Lấy dữ liệu thống kê tổng quan (Thẻ Card)
 router.get('/stats', verifyToken, isAdmin, async (req, res) => {

@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const pool = require('./db.js');
-const authenticateToken = require('./middlewares/authMiddleware.js');
+const pool = require('../db.js');
+const authenticateToken = require('../middlewares/authMiddleware.js');
 
 router.post('/', authenticateToken, async (req, res) => {
     // 1. Kiểm tra input cơ bản trước khi mở connection để tiết kiệm tài nguyên

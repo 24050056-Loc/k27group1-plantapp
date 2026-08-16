@@ -1,5 +1,53 @@
 const pool = require('../db.js'); // Đường dẫn tới file cấu hình kết nối MySQL pool của bạn
 
+const seedCatalog = [
+    { id: 'sen', name: 'Hoa Sen', category: 'Dưới nước' },
+    { id: 'sung', name: 'Hoa Súng', category: 'Dưới nước' },
+    { id: 'tao', name: 'Cây Táo', category: 'Ăn quả' },
+    { id: 'cam', name: 'Cây Cam', category: 'Ăn quả' },
+    { id: 'bang', name: 'Cây Bàng', category: 'Bóng râm' },
+    { id: 'xacu', name: 'Cây Xà Cừ', category: 'Bóng râm' },
+    { id: 'hoahong', name: 'Hoa Hồng', category: 'Hoa cảnh' },
+    { id: 'huongduong', name: 'Hướng Dương', category: 'Hoa cảnh' }
+];
+
+// 0. Lấy danh sách hạt giống
+exports.getSeeds = (req, res) => {
+    res.json({ success: true, data: seedCatalog });
+};
+
+// 0.1 Chọn hạt giống để trồng
+exports.choosePlant = async (req, res) => {
+    const { userId, seedId } = req.body;
+    if (!userId || !seedId) return res.status(400).json({ success: false, message: 'Thiếu thông tin user hoặc seed' });
+
+    try {
+        // Kiểm tra hạt giống có tồn tại không
+        const seed = seedCatalog.find(s => s.id === seedId);
+        if (!seed) return res.status(404).json({ success: false, message: 'Loại cây không hợp lệ' });
+
+        // Kiểm tra xem user đang có cây nào chưa thu hoạch không
+        const [existing] = await pool.query(
+            'SELECT * FROM user_plants WHERE user_id = ? AND is_harvested = false LIMIT 1', 
+            [userId]
+        );
+
+        if (existing.length > 0) {
+            return res.status(400).json({ success: false, message: 'Bạn đang trồng một cây rồi, hãy thu hoạch trước khi trồng cây mới!' });
+        }
+
+        // Tạo cây mới
+        await pool.query(
+            'INSERT INTO user_plants (user_id, plant_type, current_level, current_water, target_water) VALUES (?, ?, 1, 0, 100)',
+            [userId, seed.name]
+        );
+
+        res.json({ success: true, message: `Bạn đã gieo hạt ${seed.name} thành công!` });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
+
 // 1. Lấy trạng thái cây và kiểm tra phạt quá 48h chưa tưới
 exports.getPlantStatus = async (req, res) => {
     const { userId } = req.query;
@@ -18,12 +66,12 @@ exports.getPlantStatus = async (req, res) => {
 
         let plant = plants[0];
         if (!plant) {
-            await pool.query(
-                'INSERT INTO user_plants (user_id, plant_type, current_level, current_water, target_water) VALUES (?, "Cay_Luxury", 1, 0, 100)',
-                [userId]
-            );
-            const [newPlants] = await pool.query('SELECT * FROM user_plants WHERE user_id = ? AND is_harvested = false LIMIT 1', [userId]);
-            plant = newPlants[0];
+            return res.json({
+                success: true,
+                waterBalance: users[0].water_balance,
+                plant: null,
+                message: 'Bạn chưa có cây nào, vui lòng chọn hạt giống để bắt đầu trồng!'
+            });
         }
 
         let isShrunk = false;

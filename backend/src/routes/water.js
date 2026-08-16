@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const pool = require('./db.js');
+const pool = require('../db.js');
 
 
 // Thêm route GET này để trình duyệt truy cập trực tiếp không bị lỗi 404

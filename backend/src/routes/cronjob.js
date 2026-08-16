@@ -1,5 +1,5 @@
 const cron = require('node-cron');
-const pool = require('./db.js');
+const pool = require('../db.js');
 const express = require('express');
 const router = express.Router();
 // Hàm bắt đầu Cronjob, sẽ được gọi ở file server chính (ví dụ: index.js hoặc app.js)
@@ -25,7 +25,7 @@ const startCronJobs = () => {
                     // Liên kết với hệ thống gửi thông báo (Push Notification, Email, v.v.)
                     // Gửi nhắc nhở cho user_id
                     console.log(`🔔 [THÔNG BÁO] Gửi thông báo đến User ID ${plant.user_id}: "Cây ${plant.plant_name} của bạn đã đến giờ tưới nước để nhận voucher!"`);
-                    
+
                     // TODO: Gọi hàm gửi thông báo thực tế ở đây, ví dụ sendPushNotification(plant.user_id, message)
                 });
             } else {
@@ -37,4 +37,4 @@ const startCronJobs = () => {
     });
 };
 
-module.exports = router;
+module.exports = { router, startCronJobs };

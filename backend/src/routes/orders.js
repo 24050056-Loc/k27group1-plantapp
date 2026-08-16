@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const orderController = require('./Controller/orderController.js');
-const pool = require('./db.js');
+const orderController = require('../Controller/orderController.js');
+const pool = require('../db.js');
 
 /**
  * LƯU Ý QUAN TRỌNG: 
