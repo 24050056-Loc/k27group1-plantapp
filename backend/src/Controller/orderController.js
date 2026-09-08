@@ -47,6 +47,47 @@ const orderController = {
         }
     },
 
+    cancelOrder: async (req, res) => {
+        try {
+            const userId = req.user.id;
+            const cancelledOrder = await Order.cancelByUser(req.params.id, userId);
+
+            if (!cancelledOrder) {
+                return res.status(400).json({
+                    success: false,
+                    message: "Đơn hàng không tồn tại, không thuộc tài khoản này hoặc đã được xử lý."
+                });
+            }
+
+            res.status(200).json({
+                success: true,
+                message: "Đã hủy đơn hàng",
+                order: cancelledOrder
+            });
+        } catch (error) {
+            console.error("Lỗi hủy đơn hàng:", error);
+            res.status(500).json({ success: false, message: "Không thể hủy đơn hàng", error: error.message });
+        }
+    },
+
+    deleteCancelledOrder: async (req, res) => {
+        try {
+            const deleted = await Order.deleteCancelledByUser(req.params.id, req.user.id);
+
+            if (!deleted) {
+                return res.status(404).json({
+                    success: false,
+                    message: "Chỉ có thể xóa đơn đã hủy thuộc tài khoản của bạn."
+                });
+            }
+
+            res.json({ success: true, message: "Đã xóa đơn hàng khỏi lịch sử" });
+        } catch (error) {
+            console.error("Lỗi xóa đơn đã hủy:", error);
+            res.status(500).json({ success: false, message: "Không thể xóa đơn hàng", error: error.message });
+        }
+    },
+
     // 4. Tạo đơn hàng mới (Lưu đồng thời orders và order_items)
     createOrder: async (req, res) => {
         try {

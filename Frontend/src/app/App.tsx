@@ -43,6 +43,7 @@ import {
   Calendar as CalendarIcon,
   User as UserIcon,
   ShoppingBag as ShoppingBagIcon,
+  Plus as PlusIcon,
 } from "lucide-react-native";
 import { AuthProvider, useAuth } from "../context/AuthContext";
 import { VoucherProvider } from "../context/VoucherContext";
@@ -115,6 +116,7 @@ function AppContent() {
   const [checkoutAmount, setCheckoutAmount] = useState<number>(0);
   const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
   const [mallCategoryId, setMallCategoryId] = useState<number | null>(null);
+  const [isCreatePostOpen, setIsCreatePostOpen] = useState(false);
 
   // Auto-login giả lập cho FE khi bật DEV_MODE
   React.useEffect(() => {
@@ -174,9 +176,22 @@ function AppContent() {
           />
         );
       case "explore":
-        return <ExploreScreen />;
+        return (
+          <ExploreScreen
+            isCreatePostOpen={isCreatePostOpen}
+            onOpenCreatePost={() => setIsCreatePostOpen(true)}
+            onCloseCreatePost={() => setIsCreatePostOpen(false)}
+          />
+        );
       case "event":
-        return <EventScreen />;
+        return (
+          <EventScreen
+            onOpenExplore={() => {
+              setActiveTab("explore");
+              setScreen("explore");
+            }}
+          />
+        );
       case "profile":
         return <ProfileScreen onLogout={handleLogout} onSelectOrder={(orderId) => { setSelectedOrderId(orderId); setScreen("orderDetail"); }} />;
       case "cart":
@@ -216,7 +231,7 @@ function AppContent() {
   const isMainScreen = ["home", "mall", "explore", "event", "profile", "cart", "checkout", "paymentCOD", "paymentQR", "productDetail", "orderDetail"].includes(screen);
 
   // Màn hình tự quản lý scroll riêng — không cần ScrollView bọc ngoài
-  const isFullscreenScreen = ["cart", "checkout", "paymentCOD", "paymentQR", "productDetail", "orderDetail"].includes(screen);
+  const isFullscreenScreen = ["explore", "cart", "checkout", "paymentCOD", "paymentQR", "productDetail", "orderDetail"].includes(screen);
 
   return (
     <SafeAreaView style={styles.container}>
@@ -267,6 +282,15 @@ function AppContent() {
               })}
             </View>
           )}
+          {screen === "explore" && (
+            <TouchableOpacity
+              accessibilityLabel="Đăng bài"
+              onPress={() => setIsCreatePostOpen(true)}
+              style={styles.createPostButton}
+            >
+              <PlusIcon size={32} color="#FFFFFF" />
+            </TouchableOpacity>
+          )}
         </>
       )}
     </SafeAreaView>
@@ -292,5 +316,21 @@ const styles = StyleSheet.create({
     backgroundColor: "#ffffff",
   },
   tabItem: { alignItems: "center", justifyContent: "center" },
+  createPostButton: {
+    position: "absolute",
+    right: 20,
+    bottom: BOTTOM_TAB_HEIGHT + ANDROID_BOTTOM_INSET + 8,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#2E7D32",
+    elevation: 5,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+  },
   tabLabel: { fontSize: 11, marginTop: 4 },
 });

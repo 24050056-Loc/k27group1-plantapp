@@ -14,7 +14,15 @@ const Order = {
 
     // 2. Tìm chi tiết một đơn hàng theo ID tổng quan
     findById: async (id) => {
-        const query = 'SELECT * FROM orders WHERE id = ?';
+        const query = `
+            SELECT
+                o.*,
+                u.ho_ten AS ten_nguoi_nhan,
+                u.so_dien_thoai AS so_dien_thoai_nhan
+            FROM orders o
+            LEFT JOIN users u ON u.id = o.user_id
+            WHERE o.id = ?
+        `;
         const [rows] = await pool.execute(query, [id]);
         if (rows.length === 0) return null;
         return rows[0];
@@ -26,6 +34,26 @@ const Order = {
         const [result] = await pool.execute(query, [status, id]);
         if (result.affectedRows === 0) return null;
         return { id, status };
+    },
+
+    cancelByUser: async (id, userId) => {
+        const query = `
+            UPDATE orders
+            SET trang_thai = 'da_huy'
+            WHERE id = ? AND user_id = ? AND trang_thai IN ('cho_duyet', 'dang_xu_ly')
+        `;
+        const [result] = await pool.execute(query, [id, userId]);
+        if (result.affectedRows === 0) return null;
+        return { id: Number(id), user_id: userId, trang_thai: 'da_huy' };
+    },
+
+    deleteCancelledByUser: async (id, userId) => {
+        const query = `
+            DELETE FROM orders
+            WHERE id = ? AND user_id = ? AND trang_thai = 'da_huy'
+        `;
+        const [result] = await pool.execute(query, [id, userId]);
+        return result.affectedRows > 0;
     },
 
     // 4. Tạo mới thông tin chung của đơn hàng
@@ -69,7 +97,19 @@ const Order = {
 
     // 6. Lấy danh sách sản phẩm thuộc đơn hàng
     getItemsByOrderId: async (orderId) => {
-        const query = 'SELECT * FROM order_items WHERE order_id = ?';
+        const query = `
+            SELECT
+                oi.id,
+                oi.order_id,
+                oi.product_id,
+                oi.so_luong,
+                oi.gia_luc_mua AS gia_tien,
+                p.ten_san_pham,
+                p.hinh_anh_url
+            FROM order_items oi
+            LEFT JOIN products p ON p.id = oi.product_id
+            WHERE oi.order_id = ?
+        `;
         const [rows] = await pool.execute(query, [orderId]);
         return rows;
     }

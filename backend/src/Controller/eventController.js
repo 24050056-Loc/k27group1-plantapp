@@ -1,5 +1,23 @@
 const pool = require('../db.js'); // Đường dẫn tới file cấu hình kết nối MySQL pool của bạn
 
+const ensureProgressTable = pool.query(`
+    CREATE TABLE IF NOT EXISTS event_progress (
+        user_id INT PRIMARY KEY,
+        selected_seed VARCHAR(100) NULL,
+        stage TINYINT NOT NULL DEFAULT 0,
+        stage_start_time BIGINT NOT NULL,
+        time_reduced BIGINT NOT NULL DEFAULT 0,
+        water_turns INT NOT NULL DEFAULT 3,
+        fert_turns INT NOT NULL DEFAULT 1,
+        water_max INT NOT NULL DEFAULT 3,
+        fert_max INT NOT NULL DEFAULT 1,
+        missions JSON NOT NULL,
+        claimed_vouchers JSON NOT NULL,
+        notif_on BOOLEAN NOT NULL DEFAULT FALSE,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    )
+`).catch(error => console.error('Lỗi tạo bảng event_progress:', error.message));
+
 const seedCatalog = [
     { id: 'sen', name: 'Hoa Sen', category: 'Dưới nước' },
     { id: 'sung', name: 'Hoa Súng', category: 'Dưới nước' },
@@ -10,6 +28,61 @@ const seedCatalog = [
     { id: 'hoahong', name: 'Hoa Hồng', category: 'Hoa cảnh' },
     { id: 'huongduong', name: 'Hướng Dương', category: 'Hoa cảnh' }
 ];
+
+const parseJsonValue = value => typeof value === 'string' ? JSON.parse(value || '[]') : (value || []);
+
+exports.getProgress = async (req, res) => {
+    const { userId } = req.query;
+    if (!userId) return res.status(400).json({ success: false, message: 'Thiếu userId' });
+
+    try {
+        await ensureProgressTable;
+        const [rows] = await pool.query('SELECT * FROM event_progress WHERE user_id = ?', [userId]);
+        if (rows.length === 0) return res.json({ success: true, data: null });
+
+        const progress = rows[0];
+        progress.missions = parseJsonValue(progress.missions);
+        progress.claimed_vouchers = parseJsonValue(progress.claimed_vouchers);
+        res.json({ success: true, data: progress });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
+
+exports.saveProgress = async (req, res) => {
+    const { userId } = req.body;
+    const {
+        selectedSeed, stage, stageStartTime, timeReduced, waterTurns, fertTurns,
+        waterMax, fertMax, missions, claimedVouchers, notifOn
+    } = req.body;
+    if (!userId || !Array.isArray(missions) || !Array.isArray(claimedVouchers)) {
+        return res.status(400).json({ success: false, message: 'Dữ liệu tiến trình không hợp lệ' });
+    }
+
+    try {
+        await ensureProgressTable;
+        await pool.query(`
+            INSERT INTO event_progress
+                (user_id, selected_seed, stage, stage_start_time, time_reduced, water_turns, fert_turns,
+                 water_max, fert_max, missions, claimed_vouchers, notif_on)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE
+                selected_seed = VALUES(selected_seed), stage = VALUES(stage),
+                stage_start_time = VALUES(stage_start_time), time_reduced = VALUES(time_reduced),
+                water_turns = VALUES(water_turns), fert_turns = VALUES(fert_turns),
+                water_max = VALUES(water_max), fert_max = VALUES(fert_max),
+                missions = VALUES(missions), claimed_vouchers = VALUES(claimed_vouchers),
+                notif_on = VALUES(notif_on)
+        `, [
+            userId, selectedSeed || null, stage ?? 0, stageStartTime || Date.now(), timeReduced || 0,
+            waterTurns ?? 3, fertTurns ?? 1, waterMax ?? 3, fertMax ?? 1,
+            JSON.stringify(missions), JSON.stringify(claimedVouchers), Boolean(notifOn)
+        ]);
+        res.json({ success: true, message: 'Đã lưu tiến trình sự kiện' });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
 
 // 0. Lấy danh sách hạt giống
 exports.getSeeds = (req, res) => {

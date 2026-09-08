@@ -21,7 +21,7 @@ export function endpointUrl(endpoint: ApiEndpointKey, path = ""): string {
 }
 
 export function buildHeaders(extraHeaders: Record<string, string> = {}, token?: string) {
-  const headers = { ...defaultHeaders, ...extraHeaders };
+  const headers: Record<string, string> = { ...defaultHeaders, ...extraHeaders };
 
   if (token) {
     headers.Authorization = `Bearer ${token}`;

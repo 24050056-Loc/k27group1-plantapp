@@ -1,8 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const orderController = require('../Controller/orderController.js');
-const pool = require('../db.js');
-const authenticateToken = require('../middlewares/authMiddleware.js');
+const orderController = require('./Controller/orderController.js');
+const pool = require('./db.js');
 
 /**
  * LƯU Ý QUAN TRỌNG: 
@@ -19,12 +18,6 @@ router.post('/', orderController.createOrder);
 
 // 3. Lấy chi tiết 1 đơn hàng
 router.get('/:id', orderController.getOrderById);
-
-// Khách hàng chỉ được hủy đơn của chính mình khi đơn chưa giao.
-router.put('/:id/cancel', authenticateToken, orderController.cancelOrder);
-
-// Khách hàng chỉ được xóa đơn đã hủy của chính mình khỏi lịch sử.
-router.delete('/:id', authenticateToken, orderController.deleteCancelledOrder);
 
 // 4. Cập nhật trạng thái (Dùng cho Admin duyệt đơn)
 router.put('/:id', orderController.updateOrderStatus);

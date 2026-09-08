@@ -42,7 +42,7 @@ const SWIPE_THRESHOLD = -80; // bao nhiêu px vuốt sang trái để lộ nút 
 // ---- SwipeableCartItem component ----
 type SwipeableItemProps = {
   item: CartItem;
-  onDelete: (cartId: number) => void;
+  onDelete: (productId: number) => void;
   onChangeQuantity: (cartId: number, delta: number, currentQty: number) => void;
   isUpdating: boolean;
   isSelected: boolean;
@@ -114,7 +114,7 @@ function SwipeableCartItem({
       toValue: -SCREEN_WIDTH,
       duration: 250,
       useNativeDriver: true,
-    }).start(() => onDelete(item.cart_id));
+    }).start(() => onDelete(item.product_id));
   };
 
   const price = parseFloat(item.gia_tien);
@@ -274,6 +274,8 @@ type Props = {
   onCheckout: () => void;
 };
 
+const SHIPPING_FEE = 30000;
+
 export default function CartScreen({ onBack, onCheckout }: Props) {
   const { token } = useAuth();
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
@@ -307,18 +309,20 @@ export default function CartScreen({ onBack, onCheckout }: Props) {
     loadCart();
   }, [loadCart]);
 
-  const handleDelete = async (cartId: number) => {
-    setDeletingId(cartId);
+  const handleDelete = async (productId: number) => {
+    setDeletingId(productId);
     try {
-      await removeFromCart(token ?? undefined, cartId);
-      setCartItems((prev) => prev.filter((i) => i.cart_id !== cartId));
+      await removeFromCart(token ?? undefined, productId);
+      setCartItems((prev) => prev.filter((i) => i.product_id !== productId));
       setSelectedIds((prev) => {
         const newSet = new Set(prev);
-        newSet.delete(cartId);
+        const removedItem = cartItems.find((item) => item.product_id === productId);
+        if (removedItem) newSet.delete(removedItem.cart_id);
         return newSet;
       });
     } catch (err) {
-      Alert.alert("Lỗi", "Không thể xóa sản phẩm. Vui lòng thử lại.");
+      console.error("Lỗi xóa sản phẩm khỏi giỏ:", err);
+      Alert.alert("Lỗi xóa sản phẩm", err instanceof Error ? err.message : "Vui lòng thử lại.");
       loadCart();
     } finally {
       setDeletingId(null);
@@ -365,8 +369,12 @@ export default function CartScreen({ onBack, onCheckout }: Props) {
             try {
               // Xóa từng sản phẩm
               await Promise.all(
-                Array.from(selectedIds).map((cartId) =>
-                  removeFromCart(token ?? undefined, cartId)
+                Array.from(selectedIds).map((cartId) => {
+                  const item = cartItems.find((cartItem) => cartItem.cart_id === cartId);
+                  return item
+                    ? removeFromCart(token ?? undefined, item.product_id)
+                    : Promise.resolve();
+                }
                 )
               );
               // Cập nhật danh sách
@@ -376,7 +384,8 @@ export default function CartScreen({ onBack, onCheckout }: Props) {
               setSelectedIds(new Set());
               Alert.alert("Thành công", "Đã xóa các sản phẩm đã chọn.");
             } catch (err) {
-              Alert.alert("Lỗi", "Không thể xóa sản phẩm. Vui lòng thử lại.");
+              console.error("Lỗi xóa sản phẩm đã chọn:", err);
+              Alert.alert("Lỗi xóa sản phẩm", err instanceof Error ? err.message : "Vui lòng thử lại.");
               loadCart();
             } finally {
               setIsDeleting(false);
@@ -522,11 +531,17 @@ export default function CartScreen({ onBack, onCheckout }: Props) {
                     {subtotal.toLocaleString("vi-VN")}đ
                   </Text>
                 </View>
+                <View style={styles.summaryRow}>
+                  <Text style={styles.summaryLabel}>Phí vận chuyển</Text>
+                  <Text style={styles.summaryValue}>
+                    {SHIPPING_FEE.toLocaleString("vi-VN")}đ
+                  </Text>
+                </View>
                 <View style={styles.summaryDivider} />
                 <View style={styles.summaryRow}>
                   <Text style={styles.summaryLabelBold}>Tổng cộng</Text>
                   <Text style={styles.summaryValueBold}>
-                    {subtotal.toLocaleString("vi-VN")}đ
+                    {(subtotal + SHIPPING_FEE).toLocaleString("vi-VN")}đ
                   </Text>
                 </View>
               </View>

@@ -20,3 +20,18 @@ export async function getUserOrders(userId: number): Promise<Order[]> {
     return [];
   }
 }
+
+/** PUT /users/:id - cập nhật thông tin profile người dùng */
+export async function updateUserProfile(
+  userId: number,
+  profile: Pick<User, "ho_ten" | "email" | "so_dien_thoai" | "dia_chi">
+): Promise<User> {
+  const response = await axiosClient.put(`/users/${userId}`, {
+    name: profile.ho_ten,
+    email: profile.email,
+    phone: profile.so_dien_thoai,
+    address: profile.dia_chi,
+  });
+
+  return response.data.user;
+}
