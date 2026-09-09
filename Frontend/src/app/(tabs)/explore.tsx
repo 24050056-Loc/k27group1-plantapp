@@ -20,6 +20,20 @@ import { ReviewCard } from "../components/review/ReviewCard";
 import { CreatePostModal } from "../components/review/CreatePostModal";
 import { ImageLightboxModal } from "../components/review/ImageLightboxModal";
 import { CommentSheetModal } from "../components/review/CommentSheetModal";
+import { useAuth } from "../../context/AuthContext";
+
+const normalizeAvatarUrl = (value?: string | null, fallback = "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150") => {
+  if (!value) return fallback;
+  const trimmed = value.trim();
+  if (!trimmed) return fallback;
+
+  const driveMatch = trimmed.match(/(?:\/d\/|id=)([A-Za-z0-9_-]{10,})/);
+  if (driveMatch?.[1] && trimmed.includes("drive.google.com")) {
+    return `https://drive.google.com/uc?export=view&id=${driveMatch[1]}`;
+  }
+
+  return trimmed;
+};
 
 const CATEGORIES = ["Tất cả", "Đánh giá hot", "Khoe cây 🌿", "Mẹo chăm sóc"];
 
@@ -35,6 +49,8 @@ export default function ExploreScreen({
   onCloseCreatePost
 }: ExploreScreenProps) {
   const { user } = useAuth();
+  const profileName = user?.ho_ten || user?.ten_dang_nhap || "Bạn";
+  const profileAvatar = normalizeAvatarUrl(user?.avatar);
   const [selectedCategory, setSelectedCategory] = useState<string>("Tất cả");
   const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -152,11 +168,11 @@ export default function ExploreScreen({
                 onPress={onOpenCreatePost}
               >
                 <Image
-                  source={{ uri: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150" }}
+                  source={{ uri: profileAvatar }}
                   style={styles.composerAvatar}
                 />
                 <Text style={styles.composerPlaceholder}>
-                  Chia sẻ góc xanh hoặc khoe cây của bạn...
+                  {profileName} ơi, chia sẻ góc xanh hoặc khoe cây của bạn...
                 </Text>
               </TouchableOpacity>
 

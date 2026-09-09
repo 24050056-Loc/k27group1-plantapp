@@ -151,6 +151,7 @@ const MOCK_COMMENTS: Record<number, ReviewComment[]> = {
 
 let localReviewsState = [...INITIAL_MOCK_REVIEWS];
 
+<<<<<<< HEAD
 /** Helper map dữ liệu backend explore_posts sang interface Review của FE */
 function mapBackendPostToReview(item: any): Review {
   let mediaList: any[] = [];
@@ -207,7 +208,74 @@ export async function getReviews(categoryTag?: string, currentUserId?: number): 
     }
   } catch (error) {
     console.log("Không thể lấy bài viết từ server, dùng dữ liệu local mock:", error);
+=======
+const normalizeReview = (item: any, fallbackCategory?: string): Review => {
+  const mediaList = Array.isArray(item?.media)
+    ? item.media
+    : Array.isArray(item?.images)
+      ? item.images
+      : Array.isArray(item?.hinh_anh)
+        ? item.hinh_anh
+        : [];
+
+  return {
+    id: Number(item?.id ?? item?.review_id ?? Date.now()),
+    user_id: Number(item?.user_id ?? item?.user?.id ?? 0),
+    user_name: item?.user_name ?? item?.user?.ho_ten ?? item?.user?.name ?? item?.name ?? "Người dùng",
+    user_avatar: item?.user_avatar ?? item?.user?.avatar ?? item?.avatar_url ?? null,
+    is_purchased: Boolean(item?.is_purchased ?? item?.da_mua_hang ?? false),
+    product_id: item?.product_id ?? item?.product?.id ?? null,
+    product_name: item?.product_name ?? item?.product?.name ?? null,
+    so_sao: Number(item?.so_sao ?? item?.rating ?? 5),
+    noi_dung: item?.noi_dung ?? item?.content ?? "",
+    status: (item?.status ?? "da_duyet") as Review["status"],
+    so_luong_thich: Number(item?.so_luong_thich ?? item?.like_count ?? 0),
+    is_liked: Boolean(item?.is_liked ?? false),
+    media: mediaList.map((media: any, index: number) => ({
+      id: Number(media?.id ?? index + 1),
+      review_id: Number(item?.id ?? item?.review_id ?? index + 1),
+      loai_media: media?.loai_media ?? media?.type ?? "hinh_anh",
+      media_url: media?.media_url ?? media?.url ?? media?.image_url ?? String(media ?? ""),
+      thumbnail_url: media?.thumbnail_url ?? null,
+    })),
+    comment_count: Number(item?.comment_count ?? item?.comments_count ?? 0),
+    created_at: item?.created_at ?? item?.createdAt ?? "Vừa xong",
+    category_tag: item?.category_tag ?? item?.category ?? fallbackCategory ?? "Khám phá",
+  };
+};
+
+const extractReviewList = (payload: any): any[] => {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.data)) return payload.data;
+  if (Array.isArray(payload?.reviews)) return payload.reviews;
+  if (Array.isArray(payload?.items)) return payload.items;
+  if (Array.isArray(payload?.result)) return payload.result;
+  return [];
+};
+
+/** GET /explore/posts - Lấy danh sách review bài viết */
+export async function getReviews(categoryTag?: string): Promise<Review[]> {
+  const endpoints = ["/explore/posts", "/api/reviews"];
+  let lastError: unknown;
+
+  for (const endpoint of endpoints) {
+    try {
+      const response = await axiosClient.get(endpoint, {
+        params: { category: categoryTag !== "Tất cả" ? categoryTag : undefined }
+      });
+
+      const list = extractReviewList(response.data);
+      if (list.length > 0) {
+        return list.map((item) => normalizeReview(item, categoryTag));
+      }
+    } catch (error) {
+      lastError = error;
+      console.log(`Request failed for ${endpoint}:`, error);
+    }
+>>>>>>> d421df42a36982a456c3711118772d455ca8dae0
   }
+
+  console.log("Dùng dữ liệu fallback mock cho reviews:", lastError);
 
   if (categoryTag && categoryTag !== "Tất cả") {
     return localReviewsState.filter((r) => r.category_tag === categoryTag);
@@ -215,11 +283,16 @@ export async function getReviews(categoryTag?: string, currentUserId?: number): 
   return localReviewsState;
 }
 
+<<<<<<< HEAD
 /** POST /explore/posts - Đăng bài viết / đánh giá mới lưu trực tiếp vào Database MySQL */
+=======
+/** POST /explore/posts - Đăng bài viết / đánh giá mới có đính kèm ảnh */
+>>>>>>> d421df42a36982a456c3711118772d455ca8dae0
 export async function createReview(
   payload: CreateReviewPayload,
   onUploadProgress?: (progress: number) => void
 ): Promise<Review> {
+<<<<<<< HEAD
   try {
     const formData = new FormData();
     formData.append("user_id", (payload.user_id || 1).toString());
@@ -244,9 +317,23 @@ export async function createReview(
           const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
           onUploadProgress?.(percent);
         }
-      }
-    });
+=======
+  const endpoints = ["/explore/posts", "/api/reviews"];
 
+  for (const endpoint of endpoints) {
+    try {
+      const formData = new FormData();
+      formData.append("so_sao", payload.so_sao.toString());
+      formData.append("noi_dung", payload.noi_dung);
+      if (payload.product_id) {
+        formData.append("product_id", payload.product_id.toString());
+      }
+      if (payload.category_tag) {
+        formData.append("category_tag", payload.category_tag);
+>>>>>>> d421df42a36982a456c3711118772d455ca8dae0
+      }
+
+<<<<<<< HEAD
     if (response.data && response.data.success) {
       // Re-fetch lại danh sách từ server để đồng bộ mới nhất
       const updatedList = await getReviews(payload.category_tag, payload.user_id);
@@ -264,6 +351,45 @@ export async function createReview(
     user_id: payload.user_id || 1,
     user_name: "Người dùng",
     user_avatar: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150",
+=======
+      payload.images.forEach((imageUri, index) => {
+        const filename = imageUri.split("/").pop() || `photo_${index}.jpg`;
+        const match = /\.(\w+)$/.exec(filename);
+        const type = match ? `image/${match[1]}` : `image/jpeg`;
+        // @ts-ignore
+        formData.append("images", { uri: imageUri, name: filename, type });
+      });
+
+      const response = await axiosClient.post(endpoint, formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+        onUploadProgress: (progressEvent) => {
+          if (progressEvent.total) {
+            const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+            onUploadProgress?.(percent);
+          }
+        }
+      });
+
+      const reviewPayload = response.data?.data ?? response.data?.review ?? response.data;
+      if (reviewPayload?.id || reviewPayload?.review_id) {
+        return normalizeReview(reviewPayload, payload.category_tag || "Mới nhất");
+      }
+      return reviewPayload as Review;
+    } catch (error) {
+      console.log(`Request failed for ${endpoint} (createReview):`, error);
+    }
+  }
+
+  console.log("Mock đăng bài thành công trên local");
+  onUploadProgress?.(100);
+
+  // Fallback mock review tạo mới
+  const newReview: Review = {
+    id: Date.now(),
+    user_id: 99,
+    user_name: payload.user_name || "Bạn (Tôi)",
+    user_avatar: payload.user_avatar || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150",
+>>>>>>> d421df42a36982a456c3711118772d455ca8dae0
     is_purchased: payload.product_id ? true : false,
     product_id: payload.product_id || null,
     so_sao: payload.so_sao,
@@ -287,6 +413,7 @@ export async function createReview(
 }
 
 /** POST /explore/posts/:id/like - Toggle Like/Unlike */
+<<<<<<< HEAD
 export async function toggleReviewLike(reviewId: number, currentUserId?: number): Promise<{ is_liked: boolean; total_likes: number }> {
   try {
     const response = await axiosClient.post(`/explore/posts/${reviewId}/like`, { user_id: currentUserId || 1 });
@@ -300,6 +427,28 @@ export async function toggleReviewLike(reviewId: number, currentUserId?: number)
     console.log("Lỗi toggle like server, fallback local mock");
   }
 
+=======
+export async function toggleReviewLike(reviewId: number): Promise<{ is_liked: boolean; total_likes: number }> {
+  const endpoints = [`/explore/posts/${reviewId}/like`, `/api/reviews/${reviewId}/like`];
+
+  for (const endpoint of endpoints) {
+    try {
+      const response = await axiosClient.post(endpoint);
+      const payload = response.data?.data ?? response.data;
+      if (payload && typeof payload.is_liked === "boolean") {
+        return {
+          is_liked: payload.is_liked,
+          total_likes: Number(payload.total_likes ?? payload.totalLikes ?? payload.so_luong_thich ?? 0),
+        };
+      }
+      return { is_liked: true, total_likes: 1 };
+    } catch (error) {
+      console.log(`Request failed for ${endpoint} (toggleReviewLike):`, error);
+    }
+  }
+
+  // Fallback mock toggle
+>>>>>>> d421df42a36982a456c3711118772d455ca8dae0
   const review = localReviewsState.find((r) => r.id === reviewId);
   if (review) {
     review.is_liked = !review.is_liked;
@@ -311,6 +460,7 @@ export async function toggleReviewLike(reviewId: number, currentUserId?: number)
 
 /** GET /explore/posts/:id/comments - Lấy bình luận của bài viết */
 export async function getReviewComments(reviewId: number): Promise<ReviewComment[]> {
+<<<<<<< HEAD
   try {
     const response = await axiosClient.get(`/explore/posts/${reviewId}/comments`);
     const rawList = response.data?.data || (Array.isArray(response.data) ? response.data : null);
@@ -328,16 +478,41 @@ export async function getReviewComments(reviewId: number): Promise<ReviewComment
     }
   } catch (error) {
     console.log("Lỗi lấy comment từ server");
+=======
+  const endpoints = [`/explore/posts/${reviewId}/comments`, `/api/reviews/${reviewId}/comments`];
+
+  for (const endpoint of endpoints) {
+    try {
+      const response = await axiosClient.get(endpoint);
+      const list = extractReviewList(response.data);
+      if (list.length > 0) {
+        return list.map((item) => ({
+          ...item,
+          user_name: item.user_name ?? item.user?.ho_ten ?? item.user?.name ?? "Người dùng",
+          user_avatar: item.user_avatar ?? item.user?.avatar ?? null,
+          noi_dung: item.noi_dung ?? item.content ?? "",
+          replies: Array.isArray(item.replies) ? item.replies : []
+        }));
+      }
+    } catch (error) {
+      console.log(`Request failed for ${endpoint} (getReviewComments):`, error);
+    }
+>>>>>>> d421df42a36982a456c3711118772d455ca8dae0
   }
   return MOCK_COMMENTS[reviewId] || [];
 }
 
+<<<<<<< HEAD
 /** POST /explore/posts/:id/comments - Đăng bình luận */
+=======
+/** POST /explore/posts/:id/comments - Đăng bình luận / câu trả lời */
+>>>>>>> d421df42a36982a456c3711118772d455ca8dae0
 export async function postReviewComment(
   reviewId: number,
   noiDung: string,
   parentId?: number | null
 ): Promise<ReviewComment> {
+<<<<<<< HEAD
   try {
     const response = await axiosClient.post(`/explore/posts/${reviewId}/comments`, {
       user_id: 1,
@@ -357,6 +532,21 @@ export async function postReviewComment(
     }
   } catch (error) {
     console.log("Lỗi đăng comment server");
+=======
+  const endpoints = [`/explore/posts/${reviewId}/comments`, `/api/reviews/${reviewId}/comments`];
+
+  for (const endpoint of endpoints) {
+    try {
+      const response = await axiosClient.post(endpoint, {
+        noi_dung: noiDung,
+        parent_id: parentId
+      });
+      const payload = response.data?.data ?? response.data?.comment ?? response.data;
+      if (payload?.id) return payload;
+    } catch (error) {
+      console.log(`Request failed for ${endpoint} (postReviewComment):`, error);
+    }
+>>>>>>> d421df42a36982a456c3711118772d455ca8dae0
   }
 
   const newComment: ReviewComment = {

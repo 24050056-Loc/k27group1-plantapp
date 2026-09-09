@@ -18,6 +18,19 @@ import { createReview } from "../../../services/reviewService";
 import { Review } from "../../../types/review";
 import { useAuth } from "../../../context/AuthContext";
 
+const normalizeAvatarUrl = (value?: string | null, fallback = "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150") => {
+  if (!value) return fallback;
+  const trimmed = value.trim();
+  if (!trimmed) return fallback;
+
+  const driveMatch = trimmed.match(/(?:\/d\/|id=)([A-Za-z0-9_-]{10,})/);
+  if (driveMatch?.[1] && trimmed.includes("drive.google.com")) {
+    return `https://drive.google.com/uc?export=view&id=${driveMatch[1]}`;
+  }
+
+  return trimmed;
+};
+
 type CreatePostModalProps = {
   visible: boolean;
   onClose: () => void;
@@ -134,11 +147,11 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
           {/* User Preview Header */}
           <View style={styles.userRow}>
             <Image
-              source={{ uri: user?.avatar || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150" }}
+              source={{ uri: profileAvatar }}
               style={styles.avatar}
             />
             <View>
-              <Text style={styles.userName}>{user?.ho_ten || user?.ten_dang_nhap || "Bạn (Người dùng)"}</Text>
+              <Text style={styles.userName}>{profileName}</Text>
               <View style={styles.tagBadge}>
                 <Sparkles size={12} color="#2E7D32" />
                 <Text style={styles.tagText}>{selectedCategory}</Text>
@@ -212,7 +225,7 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
           {/* Image Grid Preview with Delete Button (X) */}
           <View style={styles.imageGrid}>
             {images.map((uri, idx) => (
-              <View key={idx} style={styles.imagePreviewWrapper}>
+              <View key={`${uri}-${idx}`} style={styles.imagePreviewWrapper}>
                 <Image source={{ uri }} style={styles.previewImage} />
                 <TouchableOpacity style={styles.removeImgBtn} onPress={() => handleRemoveImage(idx)}>
                   <X size={14} color="#FFF" />
