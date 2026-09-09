@@ -770,40 +770,62 @@ export default function EventScreen({ onOpenExplore }: EventScreenProps) {
   useEffect(() => { timeReducedRef.current = timeReduced; }, [timeReduced]);
   useEffect(() => { stageRef.current = stage; }, [stage]);
 
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (stageRef.current === 0) {
-        setRemainingMs(0);
-        return;
-      }
-      const elapsed = Date.now() - stageStartTimeRef.current;
-      const totalDuration = STAGE_BASE_DURATION_MS - timeReducedRef.current;
-      const remaining = Math.max(0, totalDuration - elapsed);
-      setRemainingMs(remaining);
-
-      // Progress bar
-      const progress = Math.min(1, elapsed / totalDuration);
+  const syncStageProgress = useCallback((currentStage: StageKey, currentStageStartTime: number, currentTimeReduced: number) => {
+    if (currentStage === 0) {
+      setRemainingMs(0);
       Animated.timing(progressAnim, {
-        toValue: progress,
-        duration: 500,
+        toValue: 0,
+        duration: 300,
         useNativeDriver: false,
       }).start();
+      return;
+    }
 
-      // Stage lên khi hết thời gian
-      if (remaining <= 0 && stageRef.current < 4) {
-        const nextStage = (stageRef.current + 1) as StageKey;
-        setStage(nextStage);
-        setStageStartTime(Date.now());
-        setTimeReduced(0);
-        setPendingVoucherStage(nextStage);
-        stageStartTimeRef.current = Date.now();
-        timeReducedRef.current = 0;
-        saveProgress({ selectedSeed, stage: nextStage, stageStartTime: Date.now(), timeReduced: 0, waterTurns, fertTurns, waterMax, fertMax, missions, claimedVouchers, notifOn });
-      }
+    const totalDuration = Math.max(1000, STAGE_BASE_DURATION_MS - currentTimeReduced);
+    const elapsed = Date.now() - currentStageStartTime;
+    const remaining = Math.max(0, totalDuration - elapsed);
+    setRemainingMs(remaining);
+
+    const progress = Math.min(1, elapsed / totalDuration);
+    Animated.timing(progressAnim, {
+      toValue: progress,
+      duration: 500,
+      useNativeDriver: false,
+    }).start();
+
+    if (remaining <= 0 && currentStage < 4) {
+      const nextStage = (currentStage + 1) as StageKey;
+      const nextStageStart = Date.now();
+      setStage(nextStage);
+      setStageStartTime(nextStageStart);
+      setTimeReduced(0);
+      setRemainingMs(STAGE_BASE_DURATION_MS);
+      setPendingVoucherStage(nextStage);
+      stageStartTimeRef.current = nextStageStart;
+      timeReducedRef.current = 0;
+      saveProgress({
+        selectedSeed,
+        stage: nextStage,
+        stageStartTime: nextStageStart,
+        timeReduced: 0,
+        waterTurns,
+        fertTurns,
+        waterMax,
+        fertMax,
+        missions,
+        claimedVouchers,
+        notifOn,
+      });
+    }
+  }, [progressAnim, saveProgress, selectedSeed, waterTurns, fertTurns, waterMax, fertMax, missions, claimedVouchers, notifOn]);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      syncStageProgress(stageRef.current, stageStartTimeRef.current, timeReducedRef.current);
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [saveProgress, selectedSeed, waterTurns, fertTurns, waterMax, fertMax, missions, claimedVouchers, notifOn]);
+  }, [syncStageProgress]);
 
   // Progress bar width
   const progressWidth = progressAnim.interpolate({
@@ -822,8 +844,10 @@ export default function EventScreen({ onOpenExplore }: EventScreenProps) {
     const nextTimeReduced = Math.min(timeReduced + WATER_REDUCE_MS, STAGE_BASE_DURATION_MS - 1000);
     setWaterTurns(nextWaterTurns);
     setTimeReduced(nextTimeReduced);
+    timeReducedRef.current = nextTimeReduced;
+    syncStageProgress(stage, stageStartTime, nextTimeReduced);
     saveProgress({ selectedSeed, stage, stageStartTime, timeReduced: nextTimeReduced, waterTurns: nextWaterTurns, fertTurns, waterMax, fertMax, missions, claimedVouchers, notifOn });
-  }, [waterTurns, stage, timeReduced, selectedSeed, stageStartTime, fertTurns, waterMax, fertMax, missions, claimedVouchers, notifOn, saveProgress]);
+  }, [waterTurns, stage, timeReduced, selectedSeed, stageStartTime, fertTurns, waterMax, fertMax, missions, claimedVouchers, notifOn, saveProgress, syncStageProgress]);
 
   // ── Handler: Bón phân ─────────────────────────────────────────────────────
   const handleFert = useCallback(() => {
@@ -836,8 +860,10 @@ export default function EventScreen({ onOpenExplore }: EventScreenProps) {
     const nextTimeReduced = Math.min(timeReduced + FERT_REDUCE_MS, STAGE_BASE_DURATION_MS - 1000);
     setFertTurns(nextFertTurns);
     setTimeReduced(nextTimeReduced);
+    timeReducedRef.current = nextTimeReduced;
+    syncStageProgress(stage, stageStartTime, nextTimeReduced);
     saveProgress({ selectedSeed, stage, stageStartTime, timeReduced: nextTimeReduced, waterTurns, fertTurns: nextFertTurns, waterMax, fertMax, missions, claimedVouchers, notifOn });
-  }, [fertTurns, stage, timeReduced, selectedSeed, stageStartTime, waterTurns, waterMax, fertMax, missions, claimedVouchers, notifOn, saveProgress]);
+  }, [fertTurns, stage, timeReduced, selectedSeed, stageStartTime, waterTurns, waterMax, fertMax, missions, claimedVouchers, notifOn, saveProgress, syncStageProgress]);
 
   // ── Handler: Nhận nhiệm vụ ────────────────────────────────────────────────
   const handleClaimMission = useCallback((index: number) => {
@@ -978,9 +1004,13 @@ export default function EventScreen({ onOpenExplore }: EventScreenProps) {
   // ── Render ─────────────────────────────────────────────────────────────────
   const meta = STAGE_META[stage];
   const isMaxStage = stage === 4;
-  const totalDuration = STAGE_BASE_DURATION_MS - timeReduced;
-  const elapsed = totalDuration - remainingMs;
-  const progressPercent = stage === 0 ? 0 : Math.min(100, Math.round((elapsed / totalDuration) * 100));
+
+  const totalDuration = Math.max(1000, STAGE_BASE_DURATION_MS - timeReduced);
+  const timeSpentInStage = Math.max(0, totalDuration - remainingMs);
+  const progressPercent = stage === 0 ? 0 : isMaxStage ? 100 : Math.min(100, Math.round((timeSpentInStage / totalDuration) * 100));
+
+  // mỗi giai đoạn có tiến độ riêng, khi sang stage mới thì phần trăm bắt đầu lại từ 0
+  const stageProgressPercent = stage === 0 ? 0 : isMaxStage ? 100 : progressPercent;
 
   return (
     <View style={styles.container}>
@@ -1064,7 +1094,12 @@ export default function EventScreen({ onOpenExplore }: EventScreenProps) {
                   <Text style={styles.progressLabel}>
                     {stage === 0 ? "🌱 Chậu đang chờ hạt giống" : isMaxStage ? "🌺 Cây đã nở rộ hoàn toàn!" : "⏱️ Thời gian lên giai đoạn tiếp theo"}
                   </Text>
-                  <Text style={[styles.progressPercent, { color: meta.color }]}>{progressPercent}%</Text>
+                  <View style={styles.progressHeaderRight}>
+                    <Text style={[styles.progressPercent, { color: meta.color }]}>{stageProgressPercent}%</Text>
+                    {stage > 0 && !isMaxStage && (
+                      <Text style={styles.stageProgressText}>GĐ {stage}/4</Text>
+                    )}
+                  </View>
                 </View>
 
                 {stage !== 0 && !isMaxStage && (
@@ -1556,7 +1591,9 @@ const styles = StyleSheet.create({
   progressSection: { paddingHorizontal: 20, paddingBottom: 16 },
   progressHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 8 },
   progressLabel: { fontSize: 13, fontWeight: "700", color: "#1a2e1a", flex: 1 },
+  progressHeaderRight: { alignItems: "flex-end" },
   progressPercent: { fontSize: 18, fontWeight: "900" },
+  stageProgressText: { fontSize: 10, color: "#5d6b5d", fontWeight: "700", marginTop: 2 },
   timerBox: { alignItems: "center", marginBottom: 12 },
   timerText: { fontSize: 36, fontWeight: "900", letterSpacing: 2, fontVariant: ["tabular-nums"] },
   timerSub: { fontSize: 11, color: "#888", fontWeight: "600", marginTop: 2 },

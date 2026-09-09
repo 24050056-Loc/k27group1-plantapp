@@ -21,6 +21,33 @@ export async function getUserOrders(userId: number): Promise<Order[]> {
   }
 }
 
+/** POST /users/:id/avatar - cập nhật avatar người dùng */
+export async function updateUserAvatar(userId: number, imageUri: string): Promise<User> {
+  const uri = imageUri.trim();
+  const fileName = uri.split("/").pop() || `avatar-${Date.now()}.jpg`;
+  const fileExtension = fileName.split(".").pop()?.toLowerCase();
+  const mimeType = fileExtension === "png"
+    ? "image/png"
+    : fileExtension === "webp"
+      ? "image/webp"
+      : "image/jpeg";
+
+  const formData = new FormData();
+  formData.append("avatar", {
+    uri,
+    name: fileName,
+    type: mimeType,
+  } as any);
+
+  const response = await axiosClient.post(`/users/${userId}/avatar`, formData, {
+    headers: {
+      "Content-Type": "multipart/form-data",
+    },
+  });
+
+  return response.data.user ?? response.data.data ?? response.data;
+}
+
 /** PUT /users/:id - cập nhật thông tin profile người dùng */
 export async function updateUserProfile(
   userId: number,
@@ -33,5 +60,5 @@ export async function updateUserProfile(
     address: profile.dia_chi,
   });
 
-  return response.data.user;
+  return response.data.user ?? response.data.data ?? response.data;
 }

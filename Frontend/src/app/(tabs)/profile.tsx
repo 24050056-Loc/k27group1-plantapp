@@ -8,7 +8,7 @@ import {
 import { User as UserIcon, Settings, CreditCard, HelpCircle, LogOut, ShoppingBag, Edit2, Camera, X, LocateFixed, Trash2 } from "lucide-react-native";
 import * as ImagePicker from "expo-image-picker";
 import { useAuth } from "../../context/AuthContext";
-import { getUserOrders, getUserProfile, updateUserProfile } from "../../services/userService";
+import { getUserOrders, getUserProfile, updateUserAvatar, updateUserProfile } from "../../services/userService";
 import { deleteOrder } from "../../services/orderService";
 import { Order } from "../../types";
 
@@ -50,6 +50,21 @@ function SwipeableCancelledOrder({
 
 const SHIPPING_FEE = 30000;
 
+const normalizeAvatarUrl = (value?: string | null, fallback?: string) => {
+  const safeFallback = fallback || "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200&fit=crop";
+  if (!value) return safeFallback;
+
+  const trimmed = value.trim();
+  if (!trimmed) return safeFallback;
+
+  const driveMatch = trimmed.match(/(?:\/d\/|id=)([A-Za-z0-9_-]{10,})/);
+  if (driveMatch?.[1] && trimmed.includes("drive.google.com")) {
+    return `https://drive.google.com/uc?export=view&id=${driveMatch[1]}`;
+  }
+
+  return trimmed;
+};
+
 function formatDetectedAddress(place: Location.LocationGeocodedAddress | undefined): string {
   if (!place) return "";
 
@@ -84,9 +99,9 @@ export default function ProfileScreen({ onLogout, onSelectOrder }: Props) {
   const [locationRegion, setLocationRegion] = useState<Region | null>(null);
   const [isConfirmingLocation, setIsConfirmingLocation] = useState(false);
   const [isImagePickerVisible, setIsImagePickerVisible] = useState(false);
-  const [avatarUrl, setAvatarUrl] = useState(
-    "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200&fit=crop"
-  );
+  const defaultAvatar = "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200&fit=crop";
+  const [avatarUrl, setAvatarUrl] = useState(normalizeAvatarUrl(user?.avatar, defaultAvatar));
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   
   // Form state
   const [formData, setFormData] = useState({
@@ -95,6 +110,10 @@ export default function ProfileScreen({ onLogout, onSelectOrder }: Props) {
     so_dien_thoai: user?.so_dien_thoai || "",
     dia_chi: user?.dia_chi || "",
   });
+
+  useEffect(() => {
+    setAvatarUrl(normalizeAvatarUrl(user?.avatar, defaultAvatar));
+  }, [user?.avatar]);
 
   useEffect(() => {
     if (user?.id) {
@@ -155,6 +174,7 @@ export default function ProfileScreen({ onLogout, onSelectOrder }: Props) {
       const refreshedUser = await getUserProfile(user.id);
       if (refreshedUser) {
         updateUser(refreshedUser);
+        setAvatarUrl(normalizeAvatarUrl(refreshedUser.avatar, defaultAvatar));
         setFormData({
           ho_ten: refreshedUser.ho_ten || "",
           email: refreshedUser.email || "",
@@ -224,6 +244,27 @@ export default function ProfileScreen({ onLogout, onSelectOrder }: Props) {
     setLocationRegion(current => current ? { ...current, ...coordinate } : null);
   };
 
+  const handleSaveAvatar = async () => {
+    if (!user?.id) return;
+
+    const isLocalImage = ["file://", "content://", "blob:"].some(prefix => avatarUrl.startsWith(prefix));
+    if (!isLocalImage) return;
+
+    setIsUploadingAvatar(true);
+    try {
+      const updatedUser = await updateUserAvatar(user.id, avatarUrl);
+      updateUser(updatedUser);
+      setAvatarUrl(normalizeAvatarUrl(updatedUser.avatar, defaultAvatar));
+      return updatedUser;
+    } catch (error) {
+      console.error("Lỗi cập nhật avatar:", error);
+      Alert.alert("Lỗi", "Không thể cập nhật ảnh đại diện. Vui lòng thử lại.");
+      throw error;
+    } finally {
+      setIsUploadingAvatar(false);
+    }
+  };
+
   const handleSaveProfile = async () => {
     if (!formData.ho_ten.trim()) {
       Alert.alert("Lỗi", "Tên không được để trống");
@@ -236,6 +277,11 @@ export default function ProfileScreen({ onLogout, onSelectOrder }: Props) {
         throw new Error("Không tìm thấy người dùng");
       }
 
+      const isLocalImage = ["file://", "content://", "blob:"].some(prefix => avatarUrl.startsWith(prefix));
+      if (isLocalImage) {
+        await handleSaveAvatar();
+      }
+
       const updatedUser = await updateUserProfile(user.id, {
         ho_ten: formData.ho_ten.trim(),
         email: formData.email.trim(),
@@ -244,7 +290,7 @@ export default function ProfileScreen({ onLogout, onSelectOrder }: Props) {
       });
       updateUser(updatedUser);
       await refreshProfile();
-      
+
       Alert.alert("Thành công", "Thông tin cá nhân đã được cập nhật");
       setIsEditModalVisible(false);
     } catch (error) {
@@ -616,11 +662,11 @@ export default function ProfileScreen({ onLogout, onSelectOrder }: Props) {
                   <Text style={styles.cancelButtonText}>Hủy</Text>
                 </TouchableOpacity>
                 <TouchableOpacity 
-                  style={[styles.saveButton, isSaving && styles.saveButtonDisabled]} 
+                  style={[styles.saveButton, (isSaving || isUploadingAvatar) && styles.saveButtonDisabled]} 
                   onPress={handleSaveProfile}
-                  disabled={isSaving}
+                  disabled={isSaving || isUploadingAvatar}
                 >
-                  {isSaving ? (
+                  {isSaving || isUploadingAvatar ? (
                     <ActivityIndicator color="#fff" size="small" />
                   ) : (
                     <Text style={styles.saveButtonText}>Lưu thay đổi</Text>
