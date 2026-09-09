@@ -6,7 +6,7 @@ const { authenticate } = require('@google-cloud/local-auth');
 // Đường dẫn tới file client secret
 const CLIENT_SECRET_PATH = path.join(
   __dirname,
-  ''
+  'client.json'
 );
 // Đường dẫn lưu token sau khi đăng nhập thành công lần đầu
 const TOKEN_PATH = path.join(__dirname, 'token.json');
