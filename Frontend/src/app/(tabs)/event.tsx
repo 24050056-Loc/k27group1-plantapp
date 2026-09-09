@@ -1004,9 +1004,13 @@ export default function EventScreen({ onOpenExplore }: EventScreenProps) {
   // ── Render ─────────────────────────────────────────────────────────────────
   const meta = STAGE_META[stage];
   const isMaxStage = stage === 4;
+
   const totalDuration = Math.max(1000, STAGE_BASE_DURATION_MS - timeReduced);
-  const elapsed = Math.max(0, Date.now() - stageStartTime);
-  const progressPercent = stage === 0 ? 0 : stage === 4 ? 100 : Math.min(100, Math.round((elapsed / STAGE_BASE_DURATION_MS) * 100));
+  const timeSpentInStage = Math.max(0, totalDuration - remainingMs);
+  const progressPercent = stage === 0 ? 0 : isMaxStage ? 100 : Math.min(100, Math.round((timeSpentInStage / totalDuration) * 100));
+
+  // mỗi giai đoạn có tiến độ riêng, khi sang stage mới thì phần trăm bắt đầu lại từ 0
+  const stageProgressPercent = stage === 0 ? 0 : isMaxStage ? 100 : progressPercent;
 
   return (
     <View style={styles.container}>
@@ -1091,7 +1095,7 @@ export default function EventScreen({ onOpenExplore }: EventScreenProps) {
                     {stage === 0 ? "🌱 Chậu đang chờ hạt giống" : isMaxStage ? "🌺 Cây đã nở rộ hoàn toàn!" : "⏱️ Thời gian lên giai đoạn tiếp theo"}
                   </Text>
                   <View style={styles.progressHeaderRight}>
-                    <Text style={[styles.progressPercent, { color: meta.color }]}>{progressPercent}%</Text>
+                    <Text style={[styles.progressPercent, { color: meta.color }]}>{stageProgressPercent}%</Text>
                     {stage > 0 && !isMaxStage && (
                       <Text style={styles.stageProgressText}>GĐ {stage}/4</Text>
                     )}
