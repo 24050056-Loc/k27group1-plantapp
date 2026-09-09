@@ -39,3 +39,4 @@ yarn-error.*
 /android
 
 /backend/client.json
+/backend/token.json
