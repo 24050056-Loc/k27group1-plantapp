@@ -3,6 +3,11 @@ const router = express.Router();
 const pool = require('../db.js');
 const usersController = require('../Controller/usersController.js');
 const authenticateToken = require('../middlewares/authMiddleware.js');
+const multer = require('multer');
+const fs = require('fs');
+const { authorize, uploadRealFileToFolder, uploadFileToDrive } = require('../../ggdrive.js');
+
+const upload = multer({ dest: 'uploads/' });
 
 // ==========================================
 // 1. API XÁC THỰC (AUTH)
@@ -55,7 +60,7 @@ router.get('/:id', async (req, res) => {
     try {
         const userId = req.params.id;
         const sql = `
-            SELECT id, ten_dang_nhap, email, ho_ten, dia_chi, so_dien_thoai, vai_tro, ngay_tao 
+            SELECT id, ten_dang_nhap, email, ho_ten, dia_chi, so_dien_thoai, vai_tro, ngay_tao, avatar
             FROM users 
             WHERE id = ? AND dang_hoat_dong = TRUE
         `;
@@ -71,28 +76,55 @@ router.get('/:id', async (req, res) => {
 router.put('/:id', async (req, res) => {
     try {
         const userId = req.params.id;
-        const { name, email, phone, address } = req.body;
+        const { name, phone, address } = req.body;
 
         const sql = `
             UPDATE users 
             SET ho_ten = COALESCE(?, ho_ten),
-                email = COALESCE(?, email),
                 so_dien_thoai = COALESCE(?, so_dien_thoai),
                 dia_chi = COALESCE(?, dia_chi)
             WHERE id = ?
         `;
-        await pool.execute(sql, [name || null, email || null, phone || null, address || null, userId]);
-
-        const [rows] = await pool.execute(
-            'SELECT id, ten_dang_nhap, email, ho_ten, dia_chi, so_dien_thoai, vai_tro, ngay_tao FROM users WHERE id = ?',
-            [userId]
-        );
-        if (rows.length === 0) {
-            return res.status(404).json({ success: false, message: 'Không tìm thấy người dùng' });
-        }
-        res.json({ success: true, message: 'Cập nhật thông tin thành công', user: rows[0] });
+        await pool.execute(sql, [name || null, phone || null, address || null, userId]);
+        res.json({ success: true, message: 'Cập nhật thông tin thành công' });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Lỗi cập nhật', error: error.message });
+    }
+});
+
+// Upload avatar người dùng lên Google Drive và lưu URL vào Database
+router.post('/:id/avatar', upload.single('avatar'), async (req, res) => {
+    try {
+        const userId = req.params.id;
+        if (!req.file) {
+            return res.status(400).json({ message: "Không có file nào được upload" });
+        }
+
+        // Upload trực tiếp file lên Google Drive qua helper
+        const fileData = await uploadFileToDrive(req.file.path);
+
+        // Xóa file tạm local sau khi upload thành công
+        if (fs.existsSync(req.file.path)) {
+            fs.unlinkSync(req.file.path);
+        }
+
+        if (!fileData || !fileData.webViewLink) {
+            return res.status(500).json({ message: "Lỗi khi upload lên Google Drive" });
+        }
+
+        const avatarUrl = fileData.webViewLink;
+
+        // Lưu link avatar vào database
+        const sql = `UPDATE users SET avatar = ? WHERE id = ?`;
+        await pool.execute(sql, [avatarUrl, userId]);
+
+        res.json({ success: true, message: "Upload avatar thành công", avatarUrl });
+    } catch (error) {
+        console.error("Lỗi upload avatar:", error);
+        if (req.file && fs.existsSync(req.file.path)) {
+            fs.unlinkSync(req.file.path);
+        }
+        res.status(500).json({ success: false, message: 'Lỗi upload avatar', error: error.message });
     }
 });
 

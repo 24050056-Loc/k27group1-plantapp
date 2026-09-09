@@ -151,17 +151,62 @@ const MOCK_COMMENTS: Record<number, ReviewComment[]> = {
 
 let localReviewsState = [...INITIAL_MOCK_REVIEWS];
 
-/** GET /api/reviews - Lấy danh sách review bài viết */
-export async function getReviews(categoryTag?: string): Promise<Review[]> {
+/** Helper map dữ liệu backend explore_posts sang interface Review của FE */
+function mapBackendPostToReview(item: any): Review {
+  let mediaList: any[] = [];
+  if (Array.isArray(item.images)) {
+    mediaList = item.images.map((imgUrl: string, idx: number) => ({
+      id: idx + 1,
+      review_id: item.id,
+      loai_media: "hinh_anh",
+      media_url: imgUrl
+    }));
+  }
+
+  return {
+    id: item.id,
+    user_id: item.user_id || 1,
+    user_name: item.author_name || "Người dùng",
+    user_avatar: item.author_avatar || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150",
+    is_purchased: Boolean(item.da_mua_hang),
+    product_id: null,
+    product_name: item.plant_name || undefined,
+    so_sao: item.rating || 5,
+    noi_dung: item.content || "",
+    status: "da_duyet",
+    so_luong_thich: item.likes_count || 0,
+    is_liked: Boolean(item.is_liked),
+    media: mediaList,
+    comment_count: item.comments_count || 0,
+    created_at: item.created_at_formatted || "Vừa xong",
+    category_tag: item.category_label || item.category_tag || "Mới nhất"
+  };
+}
+
+/** GET /explore/posts - Lấy danh sách review/bài viết từ Backend MySQL */
+export async function getReviews(categoryTag?: string, currentUserId?: number): Promise<Review[]> {
   try {
-    const response = await axiosClient.get("/reviews", {
-      params: { category: categoryTag !== "Tất cả" ? categoryTag : undefined }
+    let catParam = categoryTag;
+    if (catParam === "Tất cả") catParam = undefined;
+    else if (catParam === "Đánh giá hot") catParam = "danh_gia_hot";
+    else if (catParam === "Khoe cây 🌿") catParam = "khoe_cay";
+    else if (catParam === "Mẹo chăm sóc" || catParam === "Mẹo chăm cây") catParam = "meo_cham_cay";
+
+    const response = await axiosClient.get("/explore/posts", {
+      params: { 
+        category: catParam,
+        user_id: currentUserId
+      }
     });
-    if (Array.isArray(response.data) && response.data.length > 0) {
-      return response.data;
+
+    const rawList = response.data?.data || (Array.isArray(response.data) ? response.data : null);
+    if (Array.isArray(rawList)) {
+      const formatted = rawList.map(mapBackendPostToReview);
+      localReviewsState = formatted;
+      return formatted;
     }
   } catch (error) {
-    console.log("Dùng dữ liệu fallback mock cho reviews");
+    console.log("Không thể lấy bài viết từ server, dùng dữ liệu local mock:", error);
   }
 
   if (categoryTag && categoryTag !== "Tất cả") {
@@ -170,18 +215,16 @@ export async function getReviews(categoryTag?: string): Promise<Review[]> {
   return localReviewsState;
 }
 
-/** POST /api/reviews - Đăng bài viết / đánh giá mới có đính kèm ảnh */
+/** POST /explore/posts - Đăng bài viết / đánh giá mới lưu trực tiếp vào Database MySQL */
 export async function createReview(
   payload: CreateReviewPayload,
   onUploadProgress?: (progress: number) => void
 ): Promise<Review> {
   try {
     const formData = new FormData();
-    formData.append("so_sao", payload.so_sao.toString());
-    formData.append("noi_dung", payload.noi_dung);
-    if (payload.product_id) {
-      formData.append("product_id", payload.product_id.toString());
-    }
+    formData.append("user_id", (payload.user_id || 1).toString());
+    formData.append("rating", payload.so_sao.toString());
+    formData.append("content", payload.noi_dung);
     if (payload.category_tag) {
       formData.append("category_tag", payload.category_tag);
     }
@@ -191,10 +234,10 @@ export async function createReview(
       const match = /\.(\w+)$/.exec(filename);
       const type = match ? `image/${match[1]}` : `image/jpeg`;
       // @ts-ignore
-      formData.append("images", { uri: imageUri, name: filename, type });
+      formData.append("photos", { uri: imageUri, name: filename, type });
     });
 
-    const response = await axiosClient.post("/reviews", formData, {
+    const response = await axiosClient.post("/explore/posts", formData, {
       headers: { "Content-Type": "multipart/form-data" },
       onUploadProgress: (progressEvent) => {
         if (progressEvent.total) {
@@ -204,19 +247,22 @@ export async function createReview(
       }
     });
 
-    if (response.data?.id) {
-      return response.data;
+    if (response.data && response.data.success) {
+      // Re-fetch lại danh sách từ server để đồng bộ mới nhất
+      const updatedList = await getReviews(payload.category_tag, payload.user_id);
+      const newest = updatedList.find((r) => r.id === response.data.postId || r.id === response.data.id);
+      if (newest) return newest;
     }
-  } catch (error) {
-    console.log("Mock đăng bài thành công trên local");
+  } catch (error: any) {
+    console.error("Lỗi đăng bài lên backend server:", error?.response?.data || error?.message || error);
     onUploadProgress?.(100);
   }
 
-  // Fallback mock review tạo mới
+  // Fallback local review nếu lỗi kết nối
   const newReview: Review = {
     id: Date.now(),
-    user_id: 99,
-    user_name: "Bạn (Tôi)",
+    user_id: payload.user_id || 1,
+    user_name: "Người dùng",
     user_avatar: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150",
     is_purchased: payload.product_id ? true : false,
     product_id: payload.product_id || null,
@@ -240,56 +286,83 @@ export async function createReview(
   return newReview;
 }
 
-/** POST /api/reviews/:id/like - Toggle Like/Unlike */
-export async function toggleReviewLike(reviewId: number): Promise<{ is_liked: boolean; total_likes: number }> {
+/** POST /explore/posts/:id/like - Toggle Like/Unlike */
+export async function toggleReviewLike(reviewId: number, currentUserId?: number): Promise<{ is_liked: boolean; total_likes: number }> {
   try {
-    const response = await axiosClient.post(`/reviews/${reviewId}/like`);
-    return response.data;
-  } catch (error) {
-    // Fallback mock toggle
-    const review = localReviewsState.find((r) => r.id === reviewId);
-    if (review) {
-      review.is_liked = !review.is_liked;
-      review.so_luong_thich += review.is_liked ? 1 : -1;
-      return { is_liked: review.is_liked, total_likes: review.so_luong_thich };
+    const response = await axiosClient.post(`/explore/posts/${reviewId}/like`, { user_id: currentUserId || 1 });
+    if (response.data && response.data.success) {
+      return {
+        is_liked: response.data.is_liked,
+        total_likes: response.data.likes_count
+      };
     }
-    return { is_liked: true, total_likes: 1 };
+  } catch (error) {
+    console.log("Lỗi toggle like server, fallback local mock");
   }
+
+  const review = localReviewsState.find((r) => r.id === reviewId);
+  if (review) {
+    review.is_liked = !review.is_liked;
+    review.so_luong_thich += review.is_liked ? 1 : -1;
+    return { is_liked: review.is_liked, total_likes: review.so_luong_thich };
+  }
+  return { is_liked: true, total_likes: 1 };
 }
 
-/** GET /api/reviews/:id/comments - Lấy bình luận của bài viết */
+/** GET /explore/posts/:id/comments - Lấy bình luận của bài viết */
 export async function getReviewComments(reviewId: number): Promise<ReviewComment[]> {
   try {
-    const response = await axiosClient.get(`/reviews/${reviewId}/comments`);
-    if (Array.isArray(response.data)) {
-      return response.data;
+    const response = await axiosClient.get(`/explore/posts/${reviewId}/comments`);
+    const rawList = response.data?.data || (Array.isArray(response.data) ? response.data : null);
+    if (Array.isArray(rawList)) {
+      return rawList.map((c: any) => ({
+        id: c.id,
+        review_id: c.post_id,
+        user_id: c.user_id,
+        user_name: c.author_name || "Người dùng",
+        user_avatar: c.author_avatar || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150",
+        parent_id: null,
+        noi_dung: c.content,
+        created_at: c.created_at_formatted || "Vừa xong"
+      }));
     }
   } catch (error) {
-    console.log("Mock comments API");
+    console.log("Lỗi lấy comment từ server");
   }
   return MOCK_COMMENTS[reviewId] || [];
 }
 
-/** POST /api/reviews/:id/comments - Đăng bình luận / câu trả lời */
+/** POST /explore/posts/:id/comments - Đăng bình luận */
 export async function postReviewComment(
   reviewId: number,
   noiDung: string,
   parentId?: number | null
 ): Promise<ReviewComment> {
   try {
-    const response = await axiosClient.post(`/reviews/${reviewId}/comments`, {
-      noi_dung: noiDung,
-      parent_id: parentId
+    const response = await axiosClient.post(`/explore/posts/${reviewId}/comments`, {
+      user_id: 1,
+      content: noiDung
     });
-    if (response.data?.id) return response.data;
+    if (response.data && response.data.success) {
+      return {
+        id: response.data.commentId || Date.now(),
+        review_id: reviewId,
+        user_id: 1,
+        user_name: "Bạn (Tôi)",
+        user_avatar: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150",
+        parent_id: parentId,
+        noi_dung: noiDung,
+        created_at: "Vừa xong"
+      };
+    }
   } catch (error) {
-    console.log("Mock post comment");
+    console.log("Lỗi đăng comment server");
   }
 
   const newComment: ReviewComment = {
     id: Date.now(),
     review_id: reviewId,
-    user_id: 99,
+    user_id: 1,
     user_name: "Bạn (Tôi)",
     user_avatar: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150",
     parent_id: parentId,
@@ -300,24 +373,7 @@ export async function postReviewComment(
   if (!MOCK_COMMENTS[reviewId]) {
     MOCK_COMMENTS[reviewId] = [];
   }
-
-  if (parentId) {
-    const parent = MOCK_COMMENTS[reviewId].find((c) => c.id === parentId);
-    if (parent) {
-      if (!parent.replies) parent.replies = [];
-      parent.replies.push(newComment);
-    } else {
-      MOCK_COMMENTS[reviewId].push(newComment);
-    }
-  } else {
-    MOCK_COMMENTS[reviewId].unshift(newComment);
-  }
-
-  // Update review comment count
-  const review = localReviewsState.find((r) => r.id === reviewId);
-  if (review) {
-    review.comment_count += 1;
-  }
+  MOCK_COMMENTS[reviewId].unshift(newComment);
 
   return newComment;
 }

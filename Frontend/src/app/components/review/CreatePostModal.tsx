@@ -16,6 +16,7 @@ import { X, Star, ImagePlus, Send, Sparkles } from "lucide-react-native";
 import * as ImagePicker from "expo-image-picker";
 import { createReview } from "../../../services/reviewService";
 import { Review } from "../../../types/review";
+import { useAuth } from "../../../context/AuthContext";
 
 type CreatePostModalProps = {
   visible: boolean;
@@ -30,9 +31,13 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
   onPostSuccess,
   defaultCategory = "Mới nhất"
 }) => {
+  const { user } = useAuth();
   const [rating, setRating] = useState<number>(5);
   const [content, setContent] = useState<string>("");
   const [images, setImages] = useState<string[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<string>(
+    defaultCategory && defaultCategory !== "Tất cả" && defaultCategory !== "Mới nhất" ? defaultCategory : "Khoe cây 🌿"
+  );
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [uploadProgress, setUploadProgress] = useState<number>(0);
 
@@ -76,10 +81,11 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
 
     const newReview = await createReview(
       {
+        user_id: user?.id || 1,
         so_sao: rating,
         noi_dung: content.trim(),
         images: images,
-        category_tag: defaultCategory
+        category_tag: selectedCategory
       },
       (progress) => setUploadProgress(progress)
     );
@@ -128,15 +134,33 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
           {/* User Preview Header */}
           <View style={styles.userRow}>
             <Image
-              source={{ uri: "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150" }}
+              source={{ uri: user?.avatar || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150" }}
               style={styles.avatar}
             />
             <View>
-              <Text style={styles.userName}>Bạn (Người dùng)</Text>
+              <Text style={styles.userName}>{user?.ho_ten || user?.ten_dang_nhap || "Bạn (Người dùng)"}</Text>
               <View style={styles.tagBadge}>
                 <Sparkles size={12} color="#2E7D32" />
-                <Text style={styles.tagText}>{defaultCategory}</Text>
+                <Text style={styles.tagText}>{selectedCategory}</Text>
               </View>
+            </View>
+          </View>
+
+          {/* Chọn danh mục bài viết */}
+          <View style={styles.categorySection}>
+            <Text style={styles.sectionLabel}>Chọn danh mục bài viết:</Text>
+            <View style={styles.categoryRow}>
+              {["Khoe cây 🌿", "Đánh giá hot", "Mẹo chăm sóc"].map((cat) => (
+                <TouchableOpacity
+                  key={cat}
+                  style={[styles.catChip, selectedCategory === cat && styles.catChipActive]}
+                  onPress={() => setSelectedCategory(cat)}
+                >
+                  <Text style={[styles.catChipText, selectedCategory === cat && styles.catChipTextActive]}>
+                    {cat}
+                  </Text>
+                </TouchableOpacity>
+              ))}
             </View>
           </View>
 
@@ -272,6 +296,35 @@ const styles = StyleSheet.create({
     color: "#2E7D32",
     fontWeight: "600",
     marginLeft: 4
+  },
+  categorySection: {
+    marginBottom: 16
+  },
+  categoryRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 6
+  },
+  catChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: "#F0F0F0",
+    borderWidth: 1,
+    borderColor: "#E0E0E0"
+  },
+  catChipActive: {
+    backgroundColor: "#E8F5E9",
+    borderColor: "#2E7D32"
+  },
+  catChipText: {
+    fontSize: 13,
+    color: "#666",
+    fontWeight: "500"
+  },
+  catChipTextActive: {
+    color: "#2E7D32",
+    fontWeight: "700"
   },
   ratingSection: {
     backgroundColor: "#F9FBF9",

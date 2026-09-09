@@ -124,7 +124,6 @@ async function updateFileContent(auth, fileId, newContent) {
 }
 
 /**
-/**
  * 4. TẠO FILE MỚI TRONG THƯ MỤC CHỈ ĐỊNH (File Text)
  * @param {google.auth.OAuth2} auth 
  * @param {string} folderId ID thư mục chứa file
@@ -162,7 +161,7 @@ async function createFileInFolder(auth, folderId, fileName, content) {
  */
 async function uploadRealFileToFolder(auth, folderId, filePath) {
   const drive = google.drive({ version: 'v3', auth });
-  
+
   // Lấy tên file từ đường dẫn
   const fileName = path.basename(filePath);
 
@@ -172,42 +171,63 @@ async function uploadRealFileToFolder(auth, folderId, filePath) {
   };
 
   const media = {
-    // Tự động nhận diện định dạng hoặc bạn có thể điền cứng (VD: 'image/jpeg')
-    body: fs.createReadStream(filePath), 
+    body: fs.createReadStream(filePath),
   };
 
   try {
     const res = await drive.files.create({
       resource: fileMetadata,
       media: media,
-      fields: 'id, name, mimeType',
+      fields: 'id, name, mimeType, webViewLink, webContentLink',
     });
+
+    // Cấp quyền public cho file
+    await drive.permissions.create({
+      fileId: res.data.id,
+      requestBody: {
+        role: 'reader',
+        type: 'anyone',
+      },
+    });
+
     console.log(`\n🚀 Đã upload file thành công: ${res.data.name} (ID: ${res.data.id})`);
     return res.data;
   } catch (error) {
     console.error('Lỗi khi upload file:', error.message);
+    throw error;
   }
 }
 
+/**
+ * Helper tiện ích: Tự động xác thực và upload file lên Google Drive
+ * @param {string} filePath - Đường dẫn file tạm
+ * @param {string} [folderId] - ID thư mục Google Drive (mặc định lấy từ cấu hình)
+ */
+async function uploadFileToDrive(filePath, folderId = '1LwmqPAk9GSPc11C54KBGjuqGV2r7amXe') {
+  const auth = await authorize();
+  return await uploadRealFileToFolder(auth, folderId, filePath);
+}
+
 // =========================================================================
-// THỰC THI CHƯƠNG TRÌNH MẪU
+// THỰC THI CHƯƠNG TRÌNH MẪU (Khi chạy trực tiếp node ggdrive.js)
 // =========================================================================
 async function main() {
   const auth = await authorize();
-
-  // Thay THUMUC_ID_CUA_BAN bằng ID thư mục Google Drive của bạn
   const FOLDER_ID = '1LwmqPAk9GSPc11C54KBGjuqGV2r7amXe';
-
-  // 1. Lấy danh sách file trong folder
-  // const files = await listFilesInFolder(auth, FOLDER_ID);
-
-  // 2. Tạo một file Text đơn giản
-  // await createFileInFolder(auth, FOLDER_ID, 'test_file.txt', 'Xin chào, đây là file tạo từ NodeJS!');
-
-  // 3. Upload một file có sẵn trên máy tính (VD: up file auth.js) up ảnh cũng y chang chỉ cần 'hinh_anh.jpg' là đc
-  const filePath = path.join(__dirname, 'src', 'routes', 'auth.js'); 
+  const filePath = path.join(__dirname, 'src', 'routes', 'auth.js');
   await uploadRealFileToFolder(auth, FOLDER_ID, filePath);
-
 }
 
-main().catch(console.error);
+if (require.main === module) {
+  main().catch(console.error);
+}
+
+module.exports = {
+  authorize,
+  listFilesInFolder,
+  readFileContent,
+  updateFileContent,
+  createFileInFolder,
+  uploadRealFileToFolder,
+  uploadFileToDrive,
+};

@@ -15,6 +15,7 @@ import {
 import { Compass, Sparkles, ImagePlus, Filter, Search } from "lucide-react-native";
 import { Review } from "../../types/review";
 import { getReviews } from "../../services/reviewService";
+import { useAuth } from "../../context/AuthContext";
 import { ReviewCard } from "../components/review/ReviewCard";
 import { CreatePostModal } from "../components/review/CreatePostModal";
 import { ImageLightboxModal } from "../components/review/ImageLightboxModal";
@@ -33,6 +34,7 @@ export default function ExploreScreen({
   onOpenCreatePost,
   onCloseCreatePost
 }: ExploreScreenProps) {
+  const { user } = useAuth();
   const [selectedCategory, setSelectedCategory] = useState<string>("Tất cả");
   const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
@@ -51,18 +53,18 @@ export default function ExploreScreen({
 
   useEffect(() => {
     loadFeed(selectedCategory);
-  }, [selectedCategory]);
+  }, [selectedCategory, user?.id]);
 
   const loadFeed = async (category: string) => {
     setLoading(true);
-    const data = await getReviews(category);
+    const data = await getReviews(category, user?.id);
     setReviews(data);
     setLoading(false);
   };
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    const data = await getReviews(selectedCategory);
+    const data = await getReviews(selectedCategory, user?.id);
     setReviews(data);
     setRefreshing(false);
   };

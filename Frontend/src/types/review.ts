@@ -38,6 +38,7 @@ export type Review = {
 };
 
 export type CreateReviewPayload = {
+  user_id?: number;
   product_id?: number;
   so_sao: number;
   noi_dung: string;

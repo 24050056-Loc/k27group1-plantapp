@@ -30,7 +30,7 @@ const paymentRoutes = require('./src/routes/payment');
 const { router: momoRoutes } = require('./src/routes/momo');
 const waterRoutes = require('./src/routes/water');
 const { router: cronjobRoutes, startCronJobs } = require('./src/routes/cronjob');
-const communityRoutes = require('./src/routes/community');
+const exploreRoutes = require('./src/routes/explore');
 
 // Các route Admin
 const adminRoutes = require('./src/routes/admin');
@@ -61,7 +61,11 @@ app.use('/payment', paymentRoutes);
 app.use('/momo', momoRoutes);
 app.use('/water', waterRoutes);
 app.use('/cronjob', cronjobRoutes);
-app.use('/community', communityRoutes);
+app.use('/community', exploreRoutes);
+app.use('/explore', exploreRoutes);
+app.use('/api/explore', exploreRoutes);
+app.use('/reviews', exploreRoutes);
+app.use('/api/reviews', exploreRoutes);
 
 // Cụm Route Admin
 app.use('/admin', adminRoutes);

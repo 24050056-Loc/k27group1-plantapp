@@ -3,6 +3,11 @@ const router = express.Router();
 const pool = require('./db.js');
 const usersController = require('./Controller/usersController.js');
 const authenticateToken = require('./middlewares/authMiddleware.js');
+const multer = require('multer');
+const fs = require('fs');
+const { authorize, uploadRealFileToFolder, uploadFileToDrive } = require('../ggdrive.js');
+
+const upload = multer({ dest: 'uploads/' });
 
 // ==========================================
 // 1. API XÁC THỰC (AUTH)
@@ -55,7 +60,7 @@ router.get('/:id', async (req, res) => {
     try {
         const userId = req.params.id;
         const sql = `
-            SELECT id, ten_dang_nhap, email, ho_ten, dia_chi, so_dien_thoai, vai_tro, ngay_tao 
+            SELECT id, ten_dang_nhap, email, ho_ten, dia_chi, so_dien_thoai, vai_tro, ngay_tao, avatar
             FROM users 
             WHERE id = ? AND dang_hoat_dong = TRUE
         `;
@@ -84,6 +89,39 @@ router.put('/:id', async (req, res) => {
         res.json({ success: true, message: 'Cập nhật thông tin thành công' });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Lỗi cập nhật', error: error.message });
+    }
+});
+
+// Upload avatar người dùng lên Google Drive
+router.post('/:id/avatar', upload.single('avatar'), async (req, res) => {
+    try {
+        const userId = req.params.id;
+        if (!req.file) {
+            return res.status(400).json({ message: "Không có file nào được upload" });
+        }
+
+        const fileData = await uploadFileToDrive(req.file.path);
+
+        if (fs.existsSync(req.file.path)) {
+            fs.unlinkSync(req.file.path);
+        }
+
+        if (!fileData || !fileData.webViewLink) {
+            return res.status(500).json({ message: "Lỗi khi upload lên Google Drive" });
+        }
+
+        const avatarUrl = fileData.webViewLink;
+
+        const sql = `UPDATE users SET avatar = ? WHERE id = ?`;
+        await pool.execute(sql, [avatarUrl, userId]);
+
+        res.json({ success: true, message: "Upload avatar thành công", avatarUrl });
+    } catch (error) {
+        console.error("Lỗi upload avatar:", error);
+        if (req.file && fs.existsSync(req.file.path)) {
+            fs.unlinkSync(req.file.path);
+        }
+        res.status(500).json({ success: false, message: 'Lỗi upload avatar', error: error.message });
     }
 });
 
