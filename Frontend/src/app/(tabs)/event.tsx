@@ -1,15 +1,18 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import axios from "axios";
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   ScrollView,
+  Image,
   Modal,
   Animated,
   Dimensions,
   Platform,
   ActivityIndicator,
+  Alert,
 } from "react-native";
 import Svg, {
   Ellipse,
@@ -17,7 +20,7 @@ import Svg, {
   Circle,
   G,
 } from "react-native-svg";
-import { Bell, Star, CheckCircle2, Gift, Ticket, Truck, X, ChevronRight, Droplets, Leaf, Copy, Sparkles, Tag } from "lucide-react-native";
+import { Bell, Star, CheckCircle2, Gift, Ticket, Truck, X, ChevronRight, Droplets, Leaf, Copy, Sparkles, Tag, Sprout } from "lucide-react-native";
 import {
   requestNotificationPermission,
   scheduleDailyWaterReminder,
@@ -26,7 +29,9 @@ import {
   scheduleStageAlmostDoneNotification,
 } from "../../services/notificationService";
 import { useVoucher } from "../../context/VoucherContext";
+import { useAuth } from "../../context/AuthContext";
 import axiosClient from "../../api/axiosClient";
+import { resolveProductImageByName } from "../../assets/productImages";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -37,8 +42,59 @@ const FERT_REDUCE_MS = 60 * 60 * 1000;              // Bón phân:  -60 phút
 const DEFAULT_WATER_MAX = 3;
 const DEFAULT_FERT_MAX = 1;
 
+type Seed = {
+  id: string;
+  name: string;
+  emoji: string;
+  description: string;
+  care: string;
+  growthTime: string;
+  color: string;
+  tag: string;
+  price: string;
+  image: ReturnType<typeof resolveProductImageByName>;
+  growthStages: GrowthStage[];
+};
+
+type GrowthStage = {
+  title: string;
+  age: string;
+  description: string;
+  image: ReturnType<typeof resolveProductImageByName>;
+};
+
+function createGrowthStages(
+  image: ReturnType<typeof resolveProductImageByName>,
+  descriptions: [string, string, string, string],
+): GrowthStage[] {
+  return [
+    { title: "Cây con", age: "0-6 tháng", description: descriptions[0], image },
+    { title: "Cây đang lớn", age: "6 tháng-2 năm", description: descriptions[1], image },
+    { title: "Cây trưởng thành", age: "2-5 năm", description: descriptions[2], image },
+    { title: "Ra hoa / kết trái", age: "Từ 5 năm", description: descriptions[3], image },
+  ];
+}
+
+const SEED_DATA: Seed[] = [
+  { id: "bang-dai-loan", name: "Cây Bàng Đài Loan", emoji: "🌳", description: "Tán cây thanh thoát, tạo cảm giác xanh mát cho không gian sống.", care: "Ưa sáng, tưới 2-3 lần/tuần", growthTime: "4 giờ/1 giai đoạn", color: "#2E7D32", tag: "Bán chạy #1", price: "250.000đ", image: resolveProductImageByName("Cây Bàng Đài Loan"), growthStages: createGrowthStages(resolveProductImageByName("Cây Bàng Đài Loan"), ["Thân mảnh, lá nhỏ và cần giữ ẩm đều.", "Tán bắt đầu mở rộng, cần nhiều ánh sáng.", "Tán cây phân nhánh rõ và chịu nắng tốt.", "Cây tạo tán đẹp, thường được trồng làm cây cảnh."]) },
+  { id: "sau-rieng-ri6", name: "Sầu Riêng Ri6", emoji: "🌱", description: "Giống cây khỏe, được yêu thích bởi hương vị thơm ngon đặc trưng.", care: "Ưa nắng, đất thoát nước tốt", growthTime: "4 giờ/1 giai đoạn", color: "#8D6E63", tag: "Bán chạy", price: "150.000đ", image: resolveProductImageByName("Sầu Riêng Ri6"), growthStages: createGrowthStages(resolveProductImageByName("Sầu Riêng Ri6"), ["Cây con cần che nắng gắt và tưới đều.", "Thân vươn nhanh, bắt đầu tạo tán.", "Cây ra hoa khi đủ tuổi và được chăm đúng cách.", "Cho trái Ri6 thơm béo khi cây trưởng thành."]) },
+  { id: "luoi-ho", name: "Cây Lưỡi Hổ", emoji: "🌿", description: "Cây lọc không khí dễ chăm, phù hợp cho phòng làm việc và phòng ngủ.", care: "Ưa sáng nhẹ, tưới 1 lần/tuần", growthTime: "4 giờ/1 giai đoạn", color: "#558B2F", tag: "Dễ trồng", price: "120.000đ", image: resolveProductImageByName("Cây Lưỡi Hổ"), growthStages: createGrowthStages(resolveProductImageByName("Cây Lưỡi Hổ"), ["Lá non mọc thành cụm nhỏ.", "Lá dài và cứng dần, hình thành bụi.", "Bụi lá đầy đặn, lọc không khí tốt.", "Có thể ra hoa thơm khi cây đủ khỏe."]) },
+  { id: "mang-cut", name: "Cây Măng Cụt", emoji: "🌱", description: "Cây ăn trái nhiệt đới xanh tốt, phù hợp cho khu vườn gia đình.", care: "Ưa nắng, tưới đều mỗi ngày", growthTime: "4 giờ/1 giai đoạn", color: "#2E7D32", tag: "Được yêu thích", price: "110.000đ", image: resolveProductImageByName("Cây Măng Cụt"), growthStages: createGrowthStages(resolveProductImageByName("Cây Măng Cụt"), ["Cây con ưa ẩm và cần đất giàu dinh dưỡng.", "Thân cứng hơn, lá xanh đậm và tán rộng.", "Cây khỏe, bắt đầu tích lũy dinh dưỡng.", "Ra hoa và cho quả măng cụt theo mùa."]) },
+  { id: "buoi-da-xanh", name: "Bưởi Da Xanh", emoji: "🍃", description: "Giống bưởi quen thuộc, cho trái ngon và cây phát triển khỏe.", care: "Ưa nắng, tưới 2-3 lần/tuần", growthTime: "4 giờ/1 giai đoạn", color: "#388E3C", tag: "Bán chạy", price: "95.000đ", image: resolveProductImageByName("Bưởi Da Xanh"), growthStages: createGrowthStages(resolveProductImageByName("Bưởi Da Xanh"), ["Cây con cần nắng nhẹ và tưới đều.", "Tán lá mở rộng, thân bắt đầu hóa gỗ.", "Cây trưởng thành có thể ra hoa nhiều đợt.", "Cho những chùm bưởi da xanh mọng nước."]) },
+  { id: "chom-chom-thai", name: "Cây Chôm Chôm Thái", emoji: "🌿", description: "Cây ăn trái nhiệt đới nổi bật, mang màu xanh tươi cho khu vườn.", care: "Ưa nắng, đất ẩm vừa phải", growthTime: "4 giờ/1 giai đoạn", color: "#43A047", tag: "Mới yêu thích", price: "90.000đ", image: resolveProductImageByName("Cây Chôm Chôm Thái"), growthStages: createGrowthStages(resolveProductImageByName("Cây Chôm Chôm Thái"), ["Lá non xanh sáng, cần giữ ẩm cho rễ.", "Cành lá phát triển mạnh và tạo tán.", "Cây trưởng thành sẵn sàng phân hóa mầm hoa.", "Kết thành chùm chôm chôm đỏ đẹp khi vào mùa."]) },
+];
+
 // ─── Dữ liệu Stage ────────────────────────────────────────────────────────────
 const STAGE_META = {
+  0: {
+    label: "Chưa trồng",
+    emoji: "🪴",
+    color: "#78909C",
+    bg: "#ECEFF1",
+    desc: "Chọn một hạt giống để bắt đầu khu vườn.",
+    nextLabel: "Cây non",
+    voucher: { code: "", label: "", icon: "ticket" },
+  },
   1: {
     label: "Cây non",
     emoji: "🌱",
@@ -77,7 +133,7 @@ const STAGE_META = {
   },
 } as const;
 
-type StageKey = 1 | 2 | 3 | 4;
+type StageKey = 0 | 1 | 2 | 3 | 4;
 
 // ─── Dữ liệu Nhiệm vụ ─────────────────────────────────────────────────────────
 const MISSION_DATA = [
@@ -85,6 +141,7 @@ const MISSION_DATA = [
   { label: "Xem 3 sản phẩm",     desc: "Phần thưởng: +1 lượt Tưới nước 💧", reward: "water" },
   { label: "Mua 1 cây bất kỳ",   desc: "Phần thưởng: +1 lượt Bón phân 🌿", reward: "fert"  },
   { label: "Chia sẻ sự kiện",    desc: "Phần thưởng: +1 lượt Tưới nước 💧", reward: "water" },
+  { label: "Khám phá cộng đồng", desc: "Phần thưởng: 1 hạt giống ngẫu nhiên 🌱", reward: "seed" },
 ] as const;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -222,7 +279,24 @@ function FullBloomPlant() {
   );
 }
 
+function EmptyPotPlant({ onPress }: { onPress: () => void }) {
+  return (
+    <TouchableOpacity style={styles.emptyPotButton} onPress={onPress} activeOpacity={0.8}>
+      <Svg viewBox="0 0 200 220" width="100%" height="100%">
+        <Ellipse cx="100" cy="200" rx="44" ry="7" fill="#BCAAA4" opacity="0.25" />
+        <Path d="M70 162 L74 198 L126 198 L130 162 Z" fill="#8D6E63" />
+        <Path d="M67 156 Q100 149 133 156 L130 164 Q100 157 70 164 Z" fill="#A1887F" />
+        <Ellipse cx="100" cy="156" rx="33" ry="7" fill="#5D4037" />
+      </Svg>
+      <View style={styles.emptyPotPlus}>
+        <Text style={styles.emptyPotPlusText}>+</Text>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
 function PlantIllustration({ stage }: { stage: StageKey }) {
+  if (stage === 0) return null;
   if (stage === 1) return <SeedlingPlant />;
   if (stage === 2) return <GrowingPlant />;
   if (stage === 3) return <MaturePlant />;
@@ -344,11 +418,13 @@ function MissionSheet({
   missions,
   onClose,
   onClaim,
+  onExplore,
 }: {
   visible: boolean;
   missions: boolean[];
   onClose: () => void;
   onClaim: (index: number) => void;
+  onExplore: () => void;
 }) {
   const slideAnim = useRef(new Animated.Value(400)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -414,9 +490,9 @@ function MissionSheet({
                 ) : (
                   <TouchableOpacity
                     style={styles.missionClaimBtn}
-                    onPress={() => onClaim(i)}
+                    onPress={() => MISSION_DATA[i].reward === "seed" ? onExplore() : onClaim(i)}
                   >
-                    <Text style={styles.missionClaimText}>Nhận</Text>
+                    <Text style={styles.missionClaimText}>{MISSION_DATA[i].reward === "seed" ? "Khám phá" : "Nhận"}</Text>
                   </TouchableOpacity>
                 )}
               </View>
@@ -430,6 +506,121 @@ function MissionSheet({
           </View>
         </Animated.View>
       </Animated.View>
+    </Modal>
+  );
+}
+
+function SeedInfoModal({
+  seed,
+  onClose,
+  onSelect,
+}: {
+  seed: Seed | null;
+  onClose: () => void;
+  onSelect: (seed: Seed) => void;
+}) {
+  if (!seed) return null;
+  return (
+    <Modal transparent visible={!!seed} animationType="fade" onRequestClose={onClose}>
+      <View style={styles.seedModalBackdrop}>
+        <View style={styles.seedModalCard}>
+          <TouchableOpacity style={styles.seedModalClose} onPress={onClose}>
+            <X size={18} stroke="#555" />
+          </TouchableOpacity>
+          <View style={[styles.seedModalIcon, { backgroundColor: seed.color + "18" }]}>
+            <Image source={seed.image} style={styles.seedModalImage} />
+          </View>
+          <Text style={[styles.seedModalTag, { color: seed.color }]}>{seed.tag}</Text>
+          <Text style={styles.seedModalTitle}>{seed.name}</Text>
+          <Text style={styles.seedModalDescription}>{seed.description}</Text>
+          <Text style={styles.growthTimelineTitle}>Các giai đoạn phát triển ngoài đời</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.growthTimeline}
+          >
+            {seed.growthStages.map((growthStage, index) => (
+              <View key={growthStage.title} style={[styles.growthStageCard, { borderColor: seed.color + "44" }]}>
+                <View style={styles.growthStageImageWrap}>
+                  <Image source={growthStage.image} style={styles.growthStageImage} />
+                  <View style={[styles.growthStageNumber, { backgroundColor: seed.color }]}> 
+                    <Text style={styles.growthStageNumberText}>{index + 1}</Text>
+                  </View>
+                </View>
+                <Text style={styles.growthStageTitle}>{growthStage.title}</Text>
+                <Text style={[styles.growthStageAge, { color: seed.color }]}>{growthStage.age}</Text>
+                <Text style={styles.growthStageDescription}>{growthStage.description}</Text>
+              </View>
+            ))}
+          </ScrollView>
+          <View style={styles.seedDetailRow}>
+            <View style={styles.seedDetailBox}>
+              <Text style={styles.seedDetailLabel}>Thời gian</Text>
+              <Text style={styles.seedDetailValue}>⏱ {seed.growthTime}</Text>
+            </View>
+            <View style={styles.seedDetailBox}>
+              <Text style={styles.seedDetailLabel}>Chăm sóc</Text>
+              <Text style={styles.seedDetailValue}>🌱 Dễ chăm</Text>
+            </View>
+          </View>
+          <Text style={styles.seedCareText}>💧 {seed.care}</Text>
+          <TouchableOpacity style={[styles.seedSelectButton, { backgroundColor: seed.color }]} onPress={() => onSelect(seed)}>
+            <Sprout size={18} color="#fff" />
+            <Text style={styles.seedSelectButtonText}>Chọn hạt này để trồng</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function SeedPickerModal({
+  visible,
+  onClose,
+  onSelect,
+  seeds,
+}: {
+  visible: boolean;
+  onClose: () => void;
+  onSelect: (seed: Seed) => void;
+  seeds: Seed[];
+}) {
+  return (
+    <Modal transparent visible={visible} animationType="slide" onRequestClose={onClose}>
+      <View style={styles.seedPickerBackdrop}>
+        <View style={styles.seedPickerCard}>
+          <View style={styles.seedPickerHeader}>
+            <View>
+              <Text style={styles.seedPickerTitle}>Chọn hạt giống</Text>
+              <Text style={styles.seedPickerSubtitle}>Chọn một cây bestseller để bắt đầu trồng</Text>
+            </View>
+            <TouchableOpacity style={styles.seedModalClose} onPress={onClose}>
+              <X size={18} stroke="#555" />
+            </TouchableOpacity>
+          </View>
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.seedPickerList}>
+            {seeds.length === 0 ? (
+              <View style={styles.emptySeedInventory}>
+                <Text style={styles.emptySeedInventoryEmoji}>🌱</Text>
+                <Text style={styles.emptySeedInventoryTitle}>Chưa có hạt giống</Text>
+                <Text style={styles.emptySeedInventoryText}>
+                  Hoàn thành nhiệm vụ hằng ngày để nhận hạt giống ngẫu nhiên.
+                </Text>
+              </View>
+            ) : seeds.map(seed => (
+              <TouchableOpacity key={seed.id} style={styles.seedPickerRow} onPress={() => onSelect(seed)}>
+                <Image source={seed.image} style={styles.seedPickerImage} />
+                <View style={styles.seedPickerInfo}>
+                  <Text style={styles.seedPickerName}>{seed.name}</Text>
+                  <Text style={styles.seedPickerPrice}>{seed.price}</Text>
+                  <Text style={styles.seedPickerCare}>{seed.care}</Text>
+                </View>
+                <ChevronRight size={18} color="#A5D6A7" />
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      </View>
     </Modal>
   );
 }
@@ -457,22 +648,100 @@ function ClaimedVoucherCard({ stage }: { stage: StageKey }) {
 // Main EventScreen
 // ─────────────────────────────────────────────────────────────────────────────
 
-export default function EventScreen() {
+type EventScreenProps = {
+  onOpenExplore?: () => void;
+};
+
+export default function EventScreen({ onOpenExplore }: EventScreenProps) {
+  const { user } = useAuth();
   // ── State ──────────────────────────────────────────────────────────────────
-  const [stage, setStage] = useState<StageKey>(1);
+  const [stage, setStage] = useState<StageKey>(0);
   const [stageStartTime, setStageStartTime] = useState<number>(Date.now());
   const [timeReduced, setTimeReduced] = useState<number>(0);       // ms đã giảm
   const [waterTurns, setWaterTurns] = useState(DEFAULT_WATER_MAX);
   const [fertTurns, setFertTurns] = useState(DEFAULT_FERT_MAX);
   const [waterMax, setWaterMax] = useState(DEFAULT_WATER_MAX);
   const [fertMax, setFertMax] = useState(DEFAULT_FERT_MAX);
-  const [missions, setMissions] = useState([false, false, false, false]);
+  const [missions, setMissions] = useState([false, false, false, false, false]);
   const [claimedVouchers, setClaimedVouchers] = useState<StageKey[]>([]);
   const [pendingVoucherStage, setPendingVoucherStage] = useState<StageKey | null>(null);
   const [missionOpen, setMissionOpen] = useState(false);
   const [notifOn, setNotifOn] = useState(false);
   const [remainingMs, setRemainingMs] = useState(STAGE_BASE_DURATION_MS);
   const [notifScheduledId, setNotifScheduledId] = useState<string | null>(null);
+  const [selectedSeed, setSelectedSeed] = useState<Seed | null>(null);
+  const progressLoadedRef = useRef(false);
+  const progressApiAvailableRef = useRef(true);
+
+  const saveProgress = useCallback(async (progress: {
+    selectedSeed: Seed | null;
+    stage: StageKey;
+    stageStartTime: number;
+    timeReduced: number;
+    waterTurns: number;
+    fertTurns: number;
+    waterMax: number;
+    fertMax: number;
+    missions: boolean[];
+    claimedVouchers: StageKey[];
+    notifOn: boolean;
+  }) => {
+    if (!user?.id || !progressLoadedRef.current || !progressApiAvailableRef.current) return;
+    try {
+      await axiosClient.put("/api/game/progress", {
+        userId: user.id,
+        selectedSeed: progress.selectedSeed?.id || null,
+        stage: progress.stage,
+        stageStartTime: progress.stageStartTime,
+        timeReduced: progress.timeReduced,
+        waterTurns: progress.waterTurns,
+        fertTurns: progress.fertTurns,
+        waterMax: progress.waterMax,
+        fertMax: progress.fertMax,
+        missions: progress.missions,
+        claimedVouchers: progress.claimedVouchers,
+        notifOn: progress.notifOn,
+      });
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 404) {
+        progressApiAvailableRef.current = false;
+        return;
+      }
+      console.error("Lỗi lưu tiến trình sự kiện:", error);
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    const loadProgress = async () => {
+      try {
+        const response = await axiosClient.get("/api/game/progress", { params: { userId: user.id } });
+        const progress = response.data?.data;
+        if (progress) {
+          setStage(progress.stage as StageKey);
+          setStageStartTime(Number(progress.stage_start_time));
+          setTimeReduced(Number(progress.time_reduced));
+          setWaterTurns(Number(progress.water_turns));
+          setFertTurns(Number(progress.fert_turns));
+          setWaterMax(Number(progress.water_max));
+          setFertMax(Number(progress.fert_max));
+          setMissions(progress.missions);
+          setClaimedVouchers(progress.claimed_vouchers);
+          setNotifOn(Boolean(progress.notif_on));
+          setSelectedSeed(SEED_DATA.find(seed => seed.id === progress.selected_seed) || null);
+        }
+      } catch (error) {
+        if (axios.isAxiosError(error) && error.response?.status === 404) {
+          progressApiAvailableRef.current = false;
+        } else {
+          console.error("Lỗi tải tiến trình sự kiện:", error);
+        }
+      } finally {
+        progressLoadedRef.current = true;
+      }
+    };
+    loadProgress();
+  }, [user?.id]);
 
   // ── Animations ─────────────────────────────────────────────────────────────
   const breatheAnim = useRef(new Animated.Value(1)).current;
@@ -503,6 +772,10 @@ export default function EventScreen() {
 
   useEffect(() => {
     const interval = setInterval(() => {
+      if (stageRef.current === 0) {
+        setRemainingMs(0);
+        return;
+      }
       const elapsed = Date.now() - stageStartTimeRef.current;
       const totalDuration = STAGE_BASE_DURATION_MS - timeReducedRef.current;
       const remaining = Math.max(0, totalDuration - elapsed);
@@ -525,11 +798,12 @@ export default function EventScreen() {
         setPendingVoucherStage(nextStage);
         stageStartTimeRef.current = Date.now();
         timeReducedRef.current = 0;
+        saveProgress({ selectedSeed, stage: nextStage, stageStartTime: Date.now(), timeReduced: 0, waterTurns, fertTurns, waterMax, fertMax, missions, claimedVouchers, notifOn });
       }
     }, 1000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [saveProgress, selectedSeed, waterTurns, fertTurns, waterMax, fertMax, missions, claimedVouchers, notifOn]);
 
   // Progress bar width
   const progressWidth = progressAnim.interpolate({
@@ -539,45 +813,97 @@ export default function EventScreen() {
 
   // ── Handler: Tưới nước ─────────────────────────────────────────────────────
   const handleWater = useCallback(() => {
-    if (waterTurns <= 0 || stage === 4) return;
+    if (waterTurns <= 0 || stage === 0 || stage === 4) return;
     Animated.sequence([
       Animated.timing(waterBtnAnim, { toValue: 0.9, duration: 80, useNativeDriver: true }),
       Animated.spring(waterBtnAnim, { toValue: 1, tension: 200, friction: 5, useNativeDriver: true }),
     ]).start();
-    setWaterTurns(v => v - 1);
-    setTimeReduced(v => Math.min(v + WATER_REDUCE_MS, STAGE_BASE_DURATION_MS - 1000));
-  }, [waterTurns, stage]);
+    const nextWaterTurns = waterTurns - 1;
+    const nextTimeReduced = Math.min(timeReduced + WATER_REDUCE_MS, STAGE_BASE_DURATION_MS - 1000);
+    setWaterTurns(nextWaterTurns);
+    setTimeReduced(nextTimeReduced);
+    saveProgress({ selectedSeed, stage, stageStartTime, timeReduced: nextTimeReduced, waterTurns: nextWaterTurns, fertTurns, waterMax, fertMax, missions, claimedVouchers, notifOn });
+  }, [waterTurns, stage, timeReduced, selectedSeed, stageStartTime, fertTurns, waterMax, fertMax, missions, claimedVouchers, notifOn, saveProgress]);
 
   // ── Handler: Bón phân ─────────────────────────────────────────────────────
   const handleFert = useCallback(() => {
-    if (fertTurns <= 0 || stage === 4) return;
+    if (fertTurns <= 0 || stage === 0 || stage === 4) return;
     Animated.sequence([
       Animated.timing(fertBtnAnim, { toValue: 0.9, duration: 80, useNativeDriver: true }),
       Animated.spring(fertBtnAnim, { toValue: 1, tension: 200, friction: 5, useNativeDriver: true }),
     ]).start();
-    setFertTurns(v => v - 1);
-    setTimeReduced(v => Math.min(v + FERT_REDUCE_MS, STAGE_BASE_DURATION_MS - 1000));
-  }, [fertTurns, stage]);
+    const nextFertTurns = fertTurns - 1;
+    const nextTimeReduced = Math.min(timeReduced + FERT_REDUCE_MS, STAGE_BASE_DURATION_MS - 1000);
+    setFertTurns(nextFertTurns);
+    setTimeReduced(nextTimeReduced);
+    saveProgress({ selectedSeed, stage, stageStartTime, timeReduced: nextTimeReduced, waterTurns, fertTurns: nextFertTurns, waterMax, fertMax, missions, claimedVouchers, notifOn });
+  }, [fertTurns, stage, timeReduced, selectedSeed, stageStartTime, waterTurns, waterMax, fertMax, missions, claimedVouchers, notifOn, saveProgress]);
 
   // ── Handler: Nhận nhiệm vụ ────────────────────────────────────────────────
   const handleClaimMission = useCallback((index: number) => {
     if (missions[index]) return;
-    setMissions(prev => { const n = [...prev]; n[index] = true; return n; });
+    const nextMissions = [...missions];
+    nextMissions[index] = true;
+    setMissions(nextMissions);
     const reward = MISSION_DATA[index].reward;
+    let nextWaterTurns = waterTurns;
+    let nextFertTurns = fertTurns;
+    let nextWaterMax = waterMax;
+    let nextFertMax = fertMax;
     if (reward === "water") {
-      setWaterTurns(v => v + 1);
-      setWaterMax(v => v + 1);
-    } else {
-      setFertTurns(v => v + 1);
-      setFertMax(v => v + 1);
+      nextWaterTurns += 1;
+      nextWaterMax += 1;
+      setWaterTurns(nextWaterTurns);
+      setWaterMax(nextWaterMax);
+    } else if (reward === "fert") {
+      nextFertTurns += 1;
+      nextFertMax += 1;
+      setFertTurns(nextFertTurns);
+      setFertMax(nextFertMax);
     }
-  }, [missions]);
+    saveProgress({ selectedSeed, stage, stageStartTime, timeReduced, waterTurns: nextWaterTurns, fertTurns: nextFertTurns, waterMax: nextWaterMax, fertMax: nextFertMax, missions: nextMissions, claimedVouchers, notifOn });
+  }, [missions, waterTurns, fertTurns, waterMax, fertMax, selectedSeed, stage, stageStartTime, timeReduced, claimedVouchers, notifOn, saveProgress]);
+
+  const handleExploreMission = useCallback(() => {
+    if (missions[4]) return;
+    const rewardSeed = SEED_DATA[Math.floor(Math.random() * SEED_DATA.length)];
+    const nextMissions = [...missions];
+    nextMissions[4] = true;
+    setMissions(nextMissions);
+    setUnlockedSeeds(prev => prev.some(seed => seed.id === rewardSeed.id) ? prev : [...prev, rewardSeed]);
+    setMissionOpen(false);
+    saveProgress({ selectedSeed, stage, stageStartTime, timeReduced, waterTurns, fertTurns, waterMax, fertMax, missions: nextMissions, claimedVouchers, notifOn });
+    Alert.alert(
+      "Bạn nhận được hạt giống!",
+      `${rewardSeed.emoji} ${rewardSeed.name} đã được thêm vào khu vườn.`,
+      [{ text: "Khám phá ngay", onPress: onOpenExplore }, { text: "Để sau" }]
+    );
+  }, [missions, onOpenExplore, selectedSeed, stage, stageStartTime, timeReduced, waterTurns, fertTurns, waterMax, fertMax, claimedVouchers, notifOn, saveProgress]);
+
+  const handleSelectSeed = useCallback((seed: Seed) => {
+    setSelectedSeed(seed);
+    setStage(1);
+    setStageStartTime(Date.now());
+    setTimeReduced(0);
+    setRemainingMs(STAGE_BASE_DURATION_MS);
+    setSeedPickerOpen(false);
+    setSeedInfo(null);
+    saveProgress({ selectedSeed: seed, stage: 1, stageStartTime: Date.now(), timeReduced: 0, waterTurns, fertTurns, waterMax, fertMax, missions, claimedVouchers, notifOn });
+  }, [waterTurns, fertTurns, waterMax, fertMax, missions, claimedVouchers, notifOn, saveProgress]);
+
+  const handleViewSeedInfo = useCallback((seed: Seed) => {
+    setSeedPickerOpen(false);
+    setSeedInfo(seed);
+  }, []);
 
   const { addVoucher, collectedVouchers } = useVoucher();
   const [activeSubTab, setActiveSubTab] = useState<"game" | "promotions">("game");
   const [storeCoupons, setStoreCoupons] = useState<any[]>([]);
   const [loadingCoupons, setLoadingCoupons] = useState(false);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
+  const [unlockedSeeds, setUnlockedSeeds] = useState<Seed[]>([]);
+  const [seedInfo, setSeedInfo] = useState<Seed | null>(null);
+  const [seedPickerOpen, setSeedPickerOpen] = useState(false);
 
   useEffect(() => {
     if (activeSubTab === "promotions") {
@@ -608,13 +934,17 @@ export default function EventScreen() {
     setClaimedVouchers(prev =>
       prev.includes(pendingVoucherStage) ? prev : [...prev, pendingVoucherStage]
     );
+    const nextClaimedVouchers = claimedVouchers.includes(pendingVoucherStage)
+      ? claimedVouchers
+      : [...claimedVouchers, pendingVoucherStage];
     const meta = STAGE_META[pendingVoucherStage];
     addVoucher(meta.voucher.code, meta.voucher.label, meta.desc);
     setPendingVoucherStage(null);
+    saveProgress({ selectedSeed, stage, stageStartTime, timeReduced, waterTurns, fertTurns, waterMax, fertMax, missions, claimedVouchers: nextClaimedVouchers, notifOn });
     if (notifOn) {
       await sendVoucherReadyNotification(meta.voucher.label, meta.label);
     }
-  }, [pendingVoucherStage, notifOn, addVoucher]);
+  }, [pendingVoucherStage, notifOn, addVoucher, claimedVouchers, selectedSeed, stage, stageStartTime, timeReduced, waterTurns, fertTurns, waterMax, fertMax, missions, saveProgress]);
 
   // ── Handler: Tiếp tục trồng ───────────────────────────────────────────────
   const handleContinuePlanting = useCallback(() => {
@@ -636,19 +966,21 @@ export default function EventScreen() {
           if (id) setNotifScheduledId(id);
         }
         setNotifOn(true);
+        saveProgress({ selectedSeed, stage, stageStartTime, timeReduced, waterTurns, fertTurns, waterMax, fertMax, missions, claimedVouchers, notifOn: true });
       }
     } else {
       await cancelDailyWaterReminder();
       setNotifOn(false);
+      saveProgress({ selectedSeed, stage, stageStartTime, timeReduced, waterTurns, fertTurns, waterMax, fertMax, missions, claimedVouchers, notifOn: false });
     }
-  }, [notifOn, remainingMs, stage]);
+  }, [notifOn, remainingMs, stage, selectedSeed, stageStartTime, timeReduced, waterTurns, fertTurns, waterMax, fertMax, missions, claimedVouchers, saveProgress]);
 
   // ── Render ─────────────────────────────────────────────────────────────────
   const meta = STAGE_META[stage];
   const isMaxStage = stage === 4;
   const totalDuration = STAGE_BASE_DURATION_MS - timeReduced;
   const elapsed = totalDuration - remainingMs;
-  const progressPercent = Math.min(100, Math.round((elapsed / totalDuration) * 100));
+  const progressPercent = stage === 0 ? 0 : Math.min(100, Math.round((elapsed / totalDuration) * 100));
 
   return (
     <View style={styles.container}>
@@ -708,7 +1040,7 @@ export default function EventScreen() {
                   <Text style={[styles.stageLabel, { color: meta.color }]}>{meta.label}</Text>
                 </View>
                 <View style={[styles.stageChip, { backgroundColor: meta.color }]}>
-                  <Text style={styles.stageChipText}>Dạng {stage}/4</Text>
+                  <Text style={styles.stageChipText}>{stage === 0 ? "Chưa trồng" : `Dạng ${stage}/4`}</Text>
                 </View>
               </View>
 
@@ -722,7 +1054,7 @@ export default function EventScreen() {
               <View style={styles.plantSvgContainer}>
                 <View style={[styles.plantGlow, { backgroundColor: meta.color + "18" }]} />
                 <Animated.View style={[styles.plantSvgBox, { transform: [{ scale: breatheAnim }] }]}>
-                  <PlantIllustration stage={stage} />
+                  {stage === 0 ? <EmptyPotPlant onPress={() => setSeedPickerOpen(true)} /> : <PlantIllustration stage={stage} />}
                 </Animated.View>
               </View>
 
@@ -730,12 +1062,12 @@ export default function EventScreen() {
               <View style={styles.progressSection}>
                 <View style={styles.progressHeader}>
                   <Text style={styles.progressLabel}>
-                    {isMaxStage ? "🌺 Cây đã nở rộ hoàn toàn!" : "⏱️ Thời gian lên giai đoạn tiếp theo"}
+                    {stage === 0 ? "🌱 Chậu đang chờ hạt giống" : isMaxStage ? "🌺 Cây đã nở rộ hoàn toàn!" : "⏱️ Thời gian lên giai đoạn tiếp theo"}
                   </Text>
                   <Text style={[styles.progressPercent, { color: meta.color }]}>{progressPercent}%</Text>
                 </View>
 
-                {!isMaxStage && (
+                {stage !== 0 && !isMaxStage && (
                   <View style={styles.timerBox}>
                     <Text style={[styles.timerText, { color: meta.color }]}>
                       {formatTime(remainingMs)}
@@ -765,7 +1097,7 @@ export default function EventScreen() {
               </View>
 
               {/* Action Buttons */}
-              {!isMaxStage && (
+              {stage !== 0 && !isMaxStage && (
                 <View style={styles.actionRow}>
                   {/* Tưới nước */}
                   <Animated.View style={[styles.actionBtnWrapper, { transform: [{ scale: waterBtnAnim }] }]}>
@@ -1017,6 +1349,18 @@ export default function EventScreen() {
         missions={missions}
         onClose={() => setMissionOpen(false)}
         onClaim={handleClaimMission}
+        onExplore={handleExploreMission}
+      />
+      <SeedInfoModal
+        seed={seedInfo}
+        onClose={() => setSeedInfo(null)}
+        onSelect={handleSelectSeed}
+      />
+      <SeedPickerModal
+        visible={seedPickerOpen}
+        onClose={() => setSeedPickerOpen(false)}
+        onSelect={handleViewSeedInfo}
+        seeds={unlockedSeeds}
       />
     </View>
   );
@@ -1081,6 +1425,77 @@ const styles = StyleSheet.create({
   scrollContent: { padding: 16, paddingBottom: 100, gap: 12 },
 
   // Plant Card
+  seedSection: {
+    backgroundColor: "#fff",
+    borderRadius: 20,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "#DCEBDE",
+  },
+  seedSectionHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 },
+  seedSectionTitle: { fontSize: 15, fontWeight: "900", color: "#1A2E1A" },
+  seedSectionSub: { fontSize: 11, color: "#6B806B", marginTop: 3 },
+  seedList: { gap: 10 },
+  seedCard: {
+    width: 142,
+    minHeight: 112,
+    padding: 10,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: "#E5EDE5",
+    backgroundColor: "#FAFCFA",
+  },
+  seedCardTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  seedImage: { width: 52, height: 44, borderRadius: 10, resizeMode: "cover" },
+  bestSellerTag: { backgroundColor: "#FFF3E0", borderRadius: 8, paddingHorizontal: 5, paddingVertical: 3, maxWidth: 72 },
+  bestSellerText: { color: "#E65100", fontSize: 8, fontWeight: "800" },
+  seedName: { color: "#1A2E1A", fontSize: 12, fontWeight: "800", marginTop: 7 },
+  seedPrice: { color: "#2E7D32", fontSize: 12, fontWeight: "900", marginTop: 3 },
+  seedHint: { color: "#6B806B", fontSize: 10, fontWeight: "600", marginTop: 4 },
+  seedModalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "center", padding: 24 },
+  seedModalCard: { backgroundColor: "#fff", borderRadius: 24, padding: 22, alignItems: "center" },
+  seedModalClose: { position: "absolute", right: 14, top: 14, padding: 6 },
+  seedModalIcon: { width: 86, height: 86, borderRadius: 43, alignItems: "center", justifyContent: "center", marginTop: 8 },
+  seedModalImage: { width: 76, height: 76, borderRadius: 38, resizeMode: "cover" },
+  seedModalTag: { fontSize: 11, fontWeight: "800", marginTop: 12, textTransform: "uppercase" },
+  seedModalTitle: { color: "#1A2E1A", fontSize: 21, fontWeight: "900", textAlign: "center", marginTop: 4 },
+  seedModalDescription: { color: "#607060", fontSize: 13, lineHeight: 20, textAlign: "center", marginTop: 8 },
+  growthTimelineTitle: { alignSelf: "flex-start", color: "#1A2E1A", fontSize: 13, fontWeight: "900", marginTop: 18, marginBottom: 10 },
+  growthTimeline: { gap: 10, paddingRight: 4 },
+  growthStageCard: { width: 138, backgroundColor: "#F8FBF8", borderWidth: 1, borderRadius: 14, padding: 8 },
+  growthStageImageWrap: { position: "relative" },
+  growthStageImage: { width: "100%", height: 78, borderRadius: 10, resizeMode: "cover" },
+  growthStageNumber: { position: "absolute", top: 6, left: 6, width: 22, height: 22, borderRadius: 11, alignItems: "center", justifyContent: "center" },
+  growthStageNumberText: { color: "#fff", fontSize: 11, fontWeight: "900" },
+  growthStageTitle: { color: "#1A2E1A", fontSize: 11, fontWeight: "900", marginTop: 8 },
+  growthStageAge: { fontSize: 10, fontWeight: "800", marginTop: 3 },
+  growthStageDescription: { color: "#687568", fontSize: 10, lineHeight: 14, marginTop: 5 },
+  seedDetailRow: { flexDirection: "row", gap: 10, width: "100%", marginTop: 16 },
+  seedDetailBox: { flex: 1, backgroundColor: "#F5F9F5", borderRadius: 12, padding: 10 },
+  seedDetailLabel: { color: "#809080", fontSize: 10, fontWeight: "700" },
+  seedDetailValue: { color: "#1A2E1A", fontSize: 11, fontWeight: "800", marginTop: 4 },
+  seedCareText: { alignSelf: "flex-start", color: "#4F6F4F", fontSize: 11, marginTop: 12 },
+  seedSelectButton: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, width: "100%", paddingVertical: 13, borderRadius: 14, marginTop: 18 },
+  seedSelectButtonText: { color: "#fff", fontSize: 13, fontWeight: "800" },
+  emptyPotButton: { width: "100%", height: "100%", alignItems: "center", justifyContent: "center" },
+  emptyPotPlus: { position: "absolute", width: 48, height: 48, borderRadius: 24, backgroundColor: "#2E7D32", alignItems: "center", justifyContent: "center", shadowColor: "#000", shadowOpacity: 0.16, shadowRadius: 5, elevation: 4 },
+  emptyPotPlusText: { color: "#fff", fontSize: 32, fontWeight: "300", lineHeight: 36 },
+  seedPickerBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.45)", justifyContent: "flex-end" },
+  seedPickerCard: { maxHeight: "82%", backgroundColor: "#F7FAF7", borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 20 },
+  seedPickerHeader: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 16 },
+  seedPickerTitle: { color: "#1A2E1A", fontSize: 21, fontWeight: "900" },
+  seedPickerSubtitle: { color: "#6B806B", fontSize: 12, marginTop: 4 },
+  seedPickerList: { gap: 10, paddingBottom: 12 },
+  emptySeedInventory: { alignItems: "center", backgroundColor: "#fff", borderRadius: 16, paddingHorizontal: 24, paddingVertical: 28, borderWidth: 1, borderColor: "#E1EAE1" },
+  emptySeedInventoryEmoji: { fontSize: 38 },
+  emptySeedInventoryTitle: { color: "#1A2E1A", fontSize: 15, fontWeight: "900", marginTop: 10 },
+  emptySeedInventoryText: { color: "#718071", fontSize: 12, lineHeight: 18, textAlign: "center", marginTop: 6 },
+  seedPickerRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#fff", borderRadius: 16, padding: 10, borderWidth: 1, borderColor: "#E1EAE1" },
+  seedPickerImage: { width: 72, height: 64, borderRadius: 12, resizeMode: "cover" },
+  seedPickerInfo: { flex: 1, marginLeft: 12 },
+  seedPickerName: { color: "#1A2E1A", fontSize: 14, fontWeight: "800" },
+  seedPickerPrice: { color: "#2E7D32", fontSize: 13, fontWeight: "900", marginTop: 3 },
+  seedPickerCare: { color: "#718071", fontSize: 10, marginTop: 3 },
   plantCard: {
     backgroundColor: "#fff",
     borderRadius: 24,

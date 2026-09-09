@@ -1,22 +1,12 @@
 const express = require('express');
 const router = express.Router();
-const eventController = require('../Controller/eventController.js');
+const eventController = require('./Controller/eventController.js');
 
 // ==========================================
 // API TRÒ CHƠI TRỒNG CÂY (MINIGAME)
 // ==========================================
 
-// 1. Lấy danh sách hạt giống
-router.get('/seeds', eventController.getSeeds);
-
-// Lưu và khôi phục tiến trình sự kiện theo từng người dùng
-router.get('/progress', eventController.getProgress);
-router.put('/progress', eventController.saveProgress);
-
-// 2. Chọn loại cây để trồng
-router.post('/choose-plant', eventController.choosePlant);
-
-// 3. Lấy trạng thái cây của người dùng
+// 1. Lấy trạng thái cây của người dùng
 router.get('/plant-status', eventController.getPlantStatus);
 
 // 2. Tưới nước cho cây

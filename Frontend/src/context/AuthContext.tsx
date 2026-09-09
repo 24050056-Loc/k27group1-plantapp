@@ -6,6 +6,7 @@ type AuthContextType = {
   token: string | null;
   user: User | null;
   login: (token: string, user: User) => void;
+  updateUser: (user: User) => void;
   logout: () => void;
 };
 
@@ -13,6 +14,7 @@ const AuthContext = createContext<AuthContextType>({
   token: null,
   user: null,
   login: () => {},
+  updateUser: () => {},
   logout: () => {},
 });
 
@@ -32,8 +34,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAuthToken(null); // Xóa token khỏi Axios
   };
 
+  const updateUser = (updatedUser: User) => {
+    setUser(updatedUser);
+  };
+
   return (
-    <AuthContext.Provider value={{ token, user, login, logout }}>
+    <AuthContext.Provider value={{ token, user, login, updateUser, logout }}>
       {children}
     </AuthContext.Provider>
   );

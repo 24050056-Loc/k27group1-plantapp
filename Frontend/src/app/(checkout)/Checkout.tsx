@@ -34,6 +34,8 @@ type Props = {
   onChooseQR: () => void;
 };
 
+const SHIPPING_FEE = 30000;
+
 export default function CheckoutScreen({
   onBack,
   onCheckoutSuccess,
@@ -44,6 +46,7 @@ export default function CheckoutScreen({
   const { collectedVouchers } = useVoucher();
 
   const [address, setAddress] = useState(user?.dia_chi || "");
+  const [addressConfirmed, setAddressConfirmed] = useState(false);
   const [loading, setLoading] = useState(false);
   const [cartSubtotal, setCartSubtotal] = useState(0);
   const [fetchingCart, setFetchingCart] = useState(true);
@@ -120,11 +123,11 @@ export default function CheckoutScreen({
     setCouponStatusMsg(null);
   };
 
-  const finalTotal = Math.max(0, cartSubtotal - discountAmount);
+  const finalTotal = Math.max(0, cartSubtotal - discountAmount) + SHIPPING_FEE;
 
   const handleChoosePayment = async (type: "COD" | "QR") => {
-    if (!address.trim()) {
-      Alert.alert("Thiếu thông tin", "Vui lòng nhập địa chỉ giao hàng trước khi thanh toán.");
+    if (!address.trim() || !addressConfirmed) {
+      Alert.alert("Xác nhận địa chỉ", "Vui lòng xác nhận địa chỉ giao hàng trước khi thanh toán.");
       return;
     }
     if (!token) return;
@@ -177,13 +180,28 @@ export default function CheckoutScreen({
             </View>
             <TextInput
               value={address}
-              onChangeText={setAddress}
-              placeholder="Nhập số nhà, tên đường, phường/xã, quận/huyện..."
+              editable={false}
+              placeholder="Hãy cập nhật địa chỉ trong trang Profile"
               placeholderTextColor="#999"
               multiline
               style={styles.addressInput}
-              editable={!loading}
             />
+            <TouchableOpacity
+              style={[styles.confirmAddressButton, addressConfirmed && styles.confirmAddressButtonDone]}
+              onPress={() => {
+                if (!address.trim()) {
+                  Alert.alert("Thiếu địa chỉ", "Vui lòng cập nhật địa chỉ trong trang Profile trước.");
+                  return;
+                }
+                setAddressConfirmed(true);
+              }}
+              disabled={loading}
+            >
+              <CheckCircle2 size={17} color={addressConfirmed ? "#fff" : "#2E7D32"} />
+              <Text style={[styles.confirmAddressText, addressConfirmed && styles.confirmAddressTextDone]}>
+                {addressConfirmed ? "Đã xác nhận địa chỉ" : "Xác nhận địa chỉ giao hàng"}
+              </Text>
+            </TouchableOpacity>
           </View>
 
           {/* Section 2: Mã giảm giá & Voucher */}
@@ -292,7 +310,7 @@ export default function CheckoutScreen({
 
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>Phí vận chuyển</Text>
-              <Text style={styles.summaryValueFree}>Miễn phí 🎉</Text>
+              <Text style={styles.summaryValue}>{SHIPPING_FEE.toLocaleString("vi-VN")}đ</Text>
             </View>
 
             <View style={styles.divider} />
@@ -312,8 +330,9 @@ export default function CheckoutScreen({
             <View style={{ gap: 12, marginBottom: 24 }}>
               {/* COD option */}
               <TouchableOpacity
-                style={styles.paymentCard}
+                style={[styles.paymentCard, (!addressConfirmed || loading) && styles.paymentCardDisabled]}
                 onPress={() => handleChoosePayment("COD")}
+                disabled={!addressConfirmed || loading}
               >
                 <View style={styles.paymentIconBg}>
                   <Truck size={22} stroke="#2E7D32" />
@@ -326,8 +345,9 @@ export default function CheckoutScreen({
 
               {/* QR Option */}
               <TouchableOpacity
-                style={[styles.paymentCard, styles.paymentCardHighlight]}
+                style={[styles.paymentCard, styles.paymentCardHighlight, (!addressConfirmed || loading) && styles.paymentCardDisabled]}
                 onPress={() => handleChoosePayment("QR")}
+                disabled={!addressConfirmed || loading}
               >
                 <View style={[styles.paymentIconBg, { backgroundColor: "#E8F5E9" }]}>
                   <QrCode size={22} stroke="#2E7D32" />
@@ -402,6 +422,11 @@ const styles = StyleSheet.create({
     minHeight: 70,
     textAlignVertical: "top",
   },
+  confirmAddressButton: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, marginTop: 10, paddingVertical: 11, borderRadius: 12, backgroundColor: "#EDF7EA", borderWidth: 1, borderColor: "#C8E6C9" },
+  confirmAddressButtonDone: { backgroundColor: "#2E7D32", borderColor: "#2E7D32" },
+  confirmAddressText: { color: "#2E7D32", fontSize: 12, fontWeight: "700" },
+  confirmAddressTextDone: { color: "#fff" },
+  paymentCardDisabled: { opacity: 0.45 },
   subLabel: { fontSize: 12, fontWeight: "600", color: "#666", marginTop: 4 },
   voucherSection: { marginBottom: 10 },
   voucherPill: {

@@ -51,6 +51,8 @@ app.use('/gioithieu', aboutRoutes);
 app.use('/cart', cartRoutes);
 app.use('/users', usersRoutes);
 app.use('/orders', ordersRoutes);
+// Alias tương thích với các màn hình FE đang dùng tiền tố số ít.
+app.use('/order', ordersRoutes);
 app.use('/mobile', mobileRoutes);
 app.use('/coupons', couponsRoutes);
 app.use('/promotional_events', promotional_eventsRoutes);

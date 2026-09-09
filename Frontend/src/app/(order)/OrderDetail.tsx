@@ -13,6 +13,8 @@ import {
 import { ChevronLeft, Trash2, Phone, MapPin } from "lucide-react-native";
 import { OrderDetail } from "../../types";
 import { resolveProductImageByName } from "../../assets/productImages";
+import { useAuth } from "../../context/AuthContext";
+import { cancelOrder, getOrderDetail } from "../../services/orderService";
 
 type Props = {
   orderId: number;
@@ -20,6 +22,7 @@ type Props = {
 };
 
 export default function OrderDetailScreen({ orderId, onBack }: Props) {
+  const { user } = useAuth();
   const [order, setOrder] = useState<OrderDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [cancelling, setCancelling] = useState(false);
@@ -31,36 +34,11 @@ export default function OrderDetailScreen({ orderId, onBack }: Props) {
   const loadOrderDetail = async () => {
     try {
       setLoading(true);
-      // TODO: Gọi API để lấy chi tiết đơn hàng: GET /order/{orderId}
-      // const response = await getOrderDetail(orderId);
-      // setOrder(response);
-
-      // Giả lập dữ liệu cho testing
-      await new Promise((r) => setTimeout(r, 500));
-      setOrder({
-        id: orderId,
-        user_id: 999,
-        tong_thanh_toan: "250000",
-        trang_thai: "dang_xu_ly",
-        ngay_dat_hang: new Date().toISOString(),
-        dia_chi_giao_hang: "123 Đường ABC, Quận 1, TP.HCM",
-        so_dien_thoai_nhan: "0901234567",
-        ten_nguoi_nhan: "Nguyễn Văn A",
-        phi_van_chuyen: "30000",
-        items: [
-          {
-            id: 1,
-            order_id: orderId,
-            product_id: 1,
-            ten_san_pham: "Cây Bàng Đài Loan",
-            so_luong: 1,
-            gia_tien: "250000",
-            hinh_anh_url: "cay_bang_dai_loan.jpg",
-          },
-        ],
-      });
+      const response = await getOrderDetail(orderId);
+      setOrder(response);
     } catch (error) {
-      Alert.alert("Lỗi", "Không thể tải chi tiết đơn hàng");
+      console.error("Lỗi tải chi tiết đơn hàng:", error);
+      Alert.alert("Lỗi", "Không thể tải chi tiết đơn hàng. Vui lòng thử lại sau.");
     } finally {
       setLoading(false);
     }
@@ -118,18 +96,21 @@ export default function OrderDetailScreen({ orderId, onBack }: Props) {
           onPress: async () => {
             setCancelling(true);
             try {
-              // TODO: Gọi API hủy đơn hàng: PUT /order/{orderId}/cancel
-              // await cancelOrder(orderId);
-
-              // Giả lập hủy thành công
-              await new Promise((r) => setTimeout(r, 800));
+              await cancelOrder(orderId);
 
               if (order) {
                 setOrder({ ...order, trang_thai: "da_huy" });
               }
               Alert.alert("Thành công", "Đơn hàng đã được hủy");
-            } catch (error) {
-              Alert.alert("Lỗi", "Không thể hủy đơn hàng. Vui lòng thử lại");
+            } catch (error: any) {
+              console.error("Lỗi hủy đơn hàng:", error);
+              const message = error?.response?.data?.message ||
+                (error?.response?.status === 403
+                  ? "Đơn hàng hiện không được phép hủy."
+                  : error?.response?.status === 404
+                    ? "Backend chưa có API hủy đơn hàng."
+                    : "Không thể hủy đơn hàng. Vui lòng thử lại");
+              Alert.alert("Lỗi", message);
             } finally {
               setCancelling(false);
             }
@@ -161,9 +142,11 @@ export default function OrderDetailScreen({ orderId, onBack }: Props) {
   }
 
   const subtotal = order.items.reduce(
-    (sum, item) => sum + parseFloat(item.gia_tien) * item.so_luong,
+    (sum, item) => sum + Number(item.gia_tien || 0) * Number(item.so_luong || 0),
     0
   );
+  const shippingFee = Number(order.phi_van_chuyen || 0);
+  const calculatedTotal = Number(order.tong_thanh_toan || subtotal + shippingFee);
 
   return (
     <View style={styles.container}>
@@ -256,15 +239,15 @@ export default function OrderDetailScreen({ orderId, onBack }: Props) {
               />
               <View style={styles.productInfo}>
                 <Text style={styles.productName} numberOfLines={2}>
-                  {item.ten_san_pham}
+                  {item.ten_san_pham || "Sản phẩm đã ngừng kinh doanh"}
                 </Text>
                 <Text style={styles.productPrice}>
-                  {parseFloat(item.gia_tien).toLocaleString("vi-VN")}đ
+                  {Number(item.gia_tien || 0).toLocaleString("vi-VN")}đ
                 </Text>
                 <Text style={styles.productQty}>x{item.so_luong}</Text>
               </View>
               <Text style={styles.productTotal}>
-                {(parseFloat(item.gia_tien) * item.so_luong).toLocaleString(
+                {(Number(item.gia_tien || 0) * Number(item.so_luong || 0)).toLocaleString(
                   "vi-VN"
                 )}
                 đ
@@ -299,7 +282,7 @@ export default function OrderDetailScreen({ orderId, onBack }: Props) {
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabelBold}>Tổng cộng</Text>
               <Text style={styles.summaryValueBold}>
-                {parseFloat(order.tong_thanh_toan).toLocaleString("vi-VN")}đ
+                {calculatedTotal.toLocaleString("vi-VN")}đ
               </Text>
             </View>
           </View>

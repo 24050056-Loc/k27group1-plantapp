@@ -1,12 +1,15 @@
 import React, { useEffect, useState } from "react";
+import * as Location from "expo-location";
+import MapView, { Marker, Region } from "react-native-maps";
 import { 
-  View, Text, StyleSheet, Image, TouchableOpacity, ScrollView, ActivityIndicator, 
+  View, Text, StyleSheet, Image, TouchableOpacity, ScrollView, ActivityIndicator, RefreshControl, Animated, PanResponder,
   Alert, TextInput, Modal, Platform 
 } from "react-native";
-import { User as UserIcon, Settings, CreditCard, HelpCircle, LogOut, ShoppingBag, Edit2, Camera, X } from "lucide-react-native";
+import { User as UserIcon, Settings, CreditCard, HelpCircle, LogOut, ShoppingBag, Edit2, Camera, X, LocateFixed, Trash2 } from "lucide-react-native";
 import * as ImagePicker from "expo-image-picker";
 import { useAuth } from "../../context/AuthContext";
-import { getUserOrders } from "../../services/userService";
+import { getUserOrders, getUserProfile, updateUserProfile } from "../../services/userService";
+import { deleteOrder } from "../../services/orderService";
 import { Order } from "../../types";
 
 type Props = {
@@ -14,12 +17,72 @@ type Props = {
   onSelectOrder?: (orderId: number) => void;
 };
 
+function SwipeableCancelledOrder({
+  children,
+  onPress,
+  onDelete,
+}: {
+  children: React.ReactNode;
+  onPress: () => void;
+  onDelete: () => void;
+}) {
+  const translateX = React.useRef(new Animated.Value(0)).current;
+  const panResponder = React.useRef(PanResponder.create({
+    onMoveShouldSetPanResponder: (_, gesture) => Math.abs(gesture.dx) > 10 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.5,
+    onPanResponderMove: (_, gesture) => translateX.setValue(Math.max(-92, Math.min(0, gesture.dx))),
+    onPanResponderRelease: (_, gesture) => Animated.spring(translateX, { toValue: gesture.dx < -55 ? -92 : 0, useNativeDriver: true }).start(),
+  })).current;
+
+  return (
+    <View style={styles.orderSwipeWrapper}>
+      <TouchableOpacity style={styles.orderDeleteBackground} onPress={onDelete}>
+        <Trash2 size={18} color="#fff" />
+        <Text style={styles.orderDeleteText}>Xóa</Text>
+      </TouchableOpacity>
+      <Animated.View style={{ transform: [{ translateX }] }} {...panResponder.panHandlers}>
+        <TouchableOpacity onPress={onPress} activeOpacity={0.85}>
+          {children}
+        </TouchableOpacity>
+      </Animated.View>
+    </View>
+  );
+}
+
+const SHIPPING_FEE = 30000;
+
+function formatDetectedAddress(place: Location.LocationGeocodedAddress | undefined): string {
+  if (!place) return "";
+
+  // Some Android geocoders return a Plus Code in `name`; it is not a useful street address.
+  const isPlusCode = (value?: string | null) => Boolean(value && /^[A-Z0-9]{4,}\+[A-Z0-9]{2,}/i.test(value.trim()));
+  const parts = [
+    !isPlusCode(place.name) ? place.name : null,
+    place.street,
+    place.district,
+    place.subregion,
+    place.city,
+    place.region,
+    place.country,
+  ];
+
+  return parts
+    .filter((part, index, values): part is string => Boolean(part) && values.indexOf(part) === index)
+    .join(", ");
+}
+
 export default function ProfileScreen({ onLogout, onSelectOrder }: Props) {
-  const { user } = useAuth();
+  const { user, updateUser } = useAuth();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(false);
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isRefreshingProfile, setIsRefreshingProfile] = useState(false);
+  const [deletingOrderId, setDeletingOrderId] = useState<number | null>(null);
+  const [locatingAddress, setLocatingAddress] = useState(false);
+  const [addressCoordinates, setAddressCoordinates] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [isLocationMapVisible, setIsLocationMapVisible] = useState(false);
+  const [locationRegion, setLocationRegion] = useState<Region | null>(null);
+  const [isConfirmingLocation, setIsConfirmingLocation] = useState(false);
   const [isImagePickerVisible, setIsImagePickerVisible] = useState(false);
   const [avatarUrl, setAvatarUrl] = useState(
     "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200&fit=crop"
@@ -85,6 +148,82 @@ export default function ProfileScreen({ onLogout, onSelectOrder }: Props) {
     setIsEditModalVisible(true);
   };
 
+  const refreshProfile = async () => {
+    if (!user?.id) return;
+    setIsRefreshingProfile(true);
+    try {
+      const refreshedUser = await getUserProfile(user.id);
+      if (refreshedUser) {
+        updateUser(refreshedUser);
+        setFormData({
+          ho_ten: refreshedUser.ho_ten || "",
+          email: refreshedUser.email || "",
+          so_dien_thoai: refreshedUser.so_dien_thoai || "",
+          dia_chi: refreshedUser.dia_chi || "",
+        });
+      }
+    } finally {
+      setIsRefreshingProfile(false);
+    }
+  };
+
+  const useCurrentLocationForAddress = async () => {
+    if (locatingAddress) return;
+    setLocatingAddress(true);
+    try {
+      if (!(await Location.hasServicesEnabledAsync())) {
+        Alert.alert("Chưa bật vị trí", "Vui lòng bật GPS/Vị trí trên điện thoại rồi thử lại.");
+        return;
+      }
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (permission.status !== Location.PermissionStatus.GRANTED) {
+        Alert.alert("Cần quyền vị trí", "Hãy cho phép ứng dụng truy cập vị trí để tự điền địa chỉ.");
+        return;
+      }
+      const currentLocation = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+      setAddressCoordinates({
+        latitude: currentLocation.coords.latitude,
+        longitude: currentLocation.coords.longitude,
+      });
+      setLocationRegion({
+        latitude: currentLocation.coords.latitude,
+        longitude: currentLocation.coords.longitude,
+        latitudeDelta: 0.0025,
+        longitudeDelta: 0.0025,
+      });
+      setIsLocationMapVisible(true);
+    } catch (error) {
+      console.error("Lỗi xác định vị trí trong Profile:", error);
+      Alert.alert("Không thể xác định vị trí", "Vui lòng thử lại hoặc nhập địa chỉ thủ công.");
+    } finally {
+      setLocatingAddress(false);
+    }
+  };
+
+  const confirmMapLocation = async () => {
+    if (!addressCoordinates || isConfirmingLocation) return;
+    setIsConfirmingLocation(true);
+    try {
+      const [place] = await Location.reverseGeocodeAsync(addressCoordinates);
+      const detectedAddress = formatDetectedAddress(place);
+      if (!detectedAddress) {
+        Alert.alert("Không tìm thấy địa chỉ", "Bạn có thể kéo ghim đến vị trí khác hoặc nhập thủ công.");
+        return;
+      }
+      setFormData(current => ({ ...current, dia_chi: detectedAddress }));
+      setIsLocationMapVisible(false);
+    } catch (error) {
+      Alert.alert("Không thể xác định địa chỉ", "Vui lòng thử lại với vị trí khác.");
+    } finally {
+      setIsConfirmingLocation(false);
+    }
+  };
+
+  const updateMapCoordinate = (coordinate: { latitude: number; longitude: number }) => {
+    setAddressCoordinates(coordinate);
+    setLocationRegion(current => current ? { ...current, ...coordinate } : null);
+  };
+
   const handleSaveProfile = async () => {
     if (!formData.ho_ten.trim()) {
       Alert.alert("Lỗi", "Tên không được để trống");
@@ -93,11 +232,18 @@ export default function ProfileScreen({ onLogout, onSelectOrder }: Props) {
 
     setIsSaving(true);
     try {
-      // TODO: Gọi API để update user info
-      // await updateUserProfile(user?.id, formData);
-      
-      // Giả lập lưu thành công
-      await new Promise((r) => setTimeout(r, 800));
+      if (!user?.id) {
+        throw new Error("Không tìm thấy người dùng");
+      }
+
+      const updatedUser = await updateUserProfile(user.id, {
+        ho_ten: formData.ho_ten.trim(),
+        email: formData.email.trim(),
+        so_dien_thoai: formData.so_dien_thoai.trim(),
+        dia_chi: formData.dia_chi.trim(),
+      });
+      updateUser(updatedUser);
+      await refreshProfile();
       
       Alert.alert("Thành công", "Thông tin cá nhân đã được cập nhật");
       setIsEditModalVisible(false);
@@ -106,6 +252,29 @@ export default function ProfileScreen({ onLogout, onSelectOrder }: Props) {
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const handleDeleteCancelledOrder = (orderId: number) => {
+    if (deletingOrderId !== null) return;
+    Alert.alert("Xóa đơn đã hủy", "Bạn có chắc muốn xóa đơn hàng này khỏi lịch sử?", [
+      { text: "Không" },
+      {
+        text: "Xóa",
+        style: "destructive",
+        onPress: async () => {
+          setDeletingOrderId(orderId);
+          try {
+            await deleteOrder(orderId);
+            setOrders(current => current.filter(order => order.id !== orderId));
+          } catch (error) {
+            console.error("Lỗi xóa đơn đã hủy:", error);
+            Alert.alert("Lỗi", error instanceof Error ? error.message : "Không thể xóa đơn đã hủy.");
+          } finally {
+            setDeletingOrderId(null);
+          }
+        },
+      },
+    ]);
   };
 
   const requestMediaLibraryPermission = async () => {
@@ -178,7 +347,17 @@ export default function ProfileScreen({ onLogout, onSelectOrder }: Props) {
   };
 
   return (
-    <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+    <ScrollView
+      style={styles.container}
+      showsVerticalScrollIndicator={false}
+      refreshControl={
+        <RefreshControl
+          refreshing={isRefreshingProfile}
+          onRefresh={refreshProfile}
+          colors={["#2E7D32"]}
+        />
+      }
+    >
       <View style={styles.profileHeader}>
         <Image 
           source={{ uri: avatarUrl }} 
@@ -209,33 +388,45 @@ export default function ProfileScreen({ onLogout, onSelectOrder }: Props) {
         </View>
       </View>
 
+      <TouchableOpacity style={styles.refreshProfileButton} onPress={refreshProfile} disabled={isRefreshingProfile}>
+        <Text style={styles.refreshProfileText}>
+          {isRefreshingProfile ? "Đang cập nhật..." : "↻ Làm mới thông tin"}
+        </Text>
+      </TouchableOpacity>
+
       <Text style={styles.sectionTitle}>Lịch sử mua hàng</Text>
       
       {loadingOrders ? (
         <ActivityIndicator color="#2E7D32" style={{ marginVertical: 10 }} />
       ) : (
         <View style={styles.ordersContainer}>
-          {orders.map((order) => (
-            <TouchableOpacity
-              key={order.id}
-              style={styles.orderCard}
-              onPress={() => onSelectOrder?.(order.id)}
-            >
-              <View style={styles.orderHeader}>
-                <Text style={styles.orderId}>Đơn hàng #{order.id}</Text>
-                <Text style={[styles.orderStatus, { color: getStatusColor(order.trang_thai) }]}>
-                  {getStatusName(order.trang_thai)}
-                </Text>
-              </View>
-              <Text style={styles.orderDate}>Ngày đặt: {new Date(order.ngay_dat_hang).toLocaleDateString("vi-VN")}</Text>
-              <Text style={styles.orderAddress} numberOfLines={1}>Giao tới: {order.dia_chi_giao_hang}</Text>
-              {order.tong_thanh_toan && (
-                <Text style={styles.orderTotal}>
-                  Tổng tiền: {parseFloat(order.tong_thanh_toan).toLocaleString("vi-VN")}đ
-                </Text>
-              )}
-            </TouchableOpacity>
-          ))}
+          {orders.map((order) => {
+            const content = (
+              <>
+                <View style={styles.orderHeader}>
+                  <Text style={styles.orderId}>Đơn hàng #{order.id}</Text>
+                  <Text style={[styles.orderStatus, { color: getStatusColor(order.trang_thai) }]}>
+                    {getStatusName(order.trang_thai)}
+                  </Text>
+                </View>
+                <Text style={styles.orderDate}>Ngày đặt: {new Date(order.ngay_dat_hang).toLocaleDateString("vi-VN")}</Text>
+                <Text style={styles.orderAddress} numberOfLines={1}>Giao tới: {order.dia_chi_giao_hang}</Text>
+                {order.tong_thanh_toan && (
+                  <Text style={styles.orderTotal}>
+                    Tổng tiền: {(parseFloat(order.tong_thanh_toan) + SHIPPING_FEE).toLocaleString("vi-VN")}đ
+                  </Text>
+                )}
+              </>
+            );
+            const card = <View style={styles.orderCard}>{content}</View>;
+            return order.trang_thai === "da_huy" ? (
+              <SwipeableCancelledOrder key={order.id} onPress={() => onSelectOrder?.(order.id)} onDelete={() => handleDeleteCancelledOrder(order.id)}>
+                {card}
+              </SwipeableCancelledOrder>
+            ) : (
+              <TouchableOpacity key={order.id} style={styles.orderCard} onPress={() => onSelectOrder?.(order.id)}>{content}</TouchableOpacity>
+            );
+          })}
           {orders.length === 0 && (
             <View style={styles.emptyOrders}>
               <ShoppingBag size={32} stroke="#ccc" />
@@ -364,12 +555,55 @@ export default function ProfileScreen({ onLogout, onSelectOrder }: Props) {
                   style={[styles.textInput, styles.textAreaInput]}
                   placeholder="Nhập địa chỉ"
                   value={formData.dia_chi}
-                  onChangeText={(text) => setFormData({ ...formData, dia_chi: text })}
+                  onChangeText={(text) => {
+                    setAddressCoordinates(null);
+                    setFormData({ ...formData, dia_chi: text });
+                  }}
                   placeholderTextColor="#ccc"
                   multiline
                   numberOfLines={3}
                   textAlignVertical="top"
                 />
+                <TouchableOpacity
+                  style={styles.locationButton}
+                  onPress={useCurrentLocationForAddress}
+                  disabled={locatingAddress}
+                >
+                  {locatingAddress ? <ActivityIndicator size="small" color="#2E7D32" /> : <LocateFixed size={16} color="#2E7D32" />}
+                  <Text style={styles.locationButtonText}>{locatingAddress ? "Đang xác định..." : "Lấy địa chỉ từ vị trí hiện tại"}</Text>
+                </TouchableOpacity>
+                {addressCoordinates && (
+                  <View style={styles.locationPreview}>
+                    <Text style={styles.locationPreviewTitle}>Vị trí đã xác định, bạn có thể chỉnh sửa trước khi lưu:</Text>
+                    <Text style={styles.locationPreviewText}>
+                      Tọa độ {addressCoordinates.latitude.toFixed(6)}, {addressCoordinates.longitude.toFixed(6)}
+                    </Text>
+                    {locationRegion && (
+                      <TouchableOpacity
+                        style={styles.locationPreviewMapWrap}
+                        onPress={() => setIsLocationMapVisible(true)}
+                        activeOpacity={0.9}
+                      >
+                        <MapView
+                          style={styles.locationPreviewMap}
+                          initialRegion={locationRegion}
+                          scrollEnabled={false}
+                          zoomEnabled={false}
+                          rotateEnabled={false}
+                          pitchEnabled={false}
+                          showsBuildings
+                          showsPointsOfInterest
+                          pointerEvents="none"
+                        >
+                          <Marker coordinate={addressCoordinates} />
+                        </MapView>
+                        <View style={styles.locationPreviewMapLabel}>
+                          <Text style={styles.locationPreviewMapLabelText}>Chạm để chỉnh vị trí</Text>
+                        </View>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                )}
               </View>
 
               {/* Buttons */}
@@ -394,6 +628,56 @@ export default function ProfileScreen({ onLogout, onSelectOrder }: Props) {
                 </TouchableOpacity>
               </View>
             </ScrollView>
+          </View>
+        </View>
+      </Modal>
+      <Modal
+        visible={isLocationMapVisible}
+        animationType="slide"
+        onRequestClose={() => setIsLocationMapVisible(false)}
+      >
+        <View style={styles.locationMapScreen}>
+          <View style={styles.locationMapHeader}>
+            <TouchableOpacity onPress={() => setIsLocationMapVisible(false)}>
+              <X size={24} color="#1A2E1A" />
+            </TouchableOpacity>
+            <View style={styles.locationMapHeaderText}>
+              <Text style={styles.locationMapTitle}>Xác nhận vị trí</Text>
+              <Text style={styles.locationMapSubtitle}>Chạm hoặc kéo ghim đến đúng vị trí</Text>
+            </View>
+          </View>
+          {locationRegion && addressCoordinates && (
+            <MapView
+              style={styles.locationMap}
+              initialRegion={locationRegion}
+              onPress={(event) => updateMapCoordinate(event.nativeEvent.coordinate)}
+              onRegionChangeComplete={(region) => setLocationRegion(region)}
+              showsUserLocation
+              showsMyLocationButton
+              showsBuildings
+              showsPointsOfInterest
+              showsCompass
+            >
+              <Marker
+                coordinate={addressCoordinates}
+                draggable
+                onDragEnd={(event) => updateMapCoordinate(event.nativeEvent.coordinate)}
+                title="Vị trí giao hàng"
+                description="Kéo ghim hoặc chạm bản đồ để điều chỉnh"
+              />
+            </MapView>
+          )}
+          <View style={styles.locationMapFooter}>
+            <Text style={styles.locationMapCoordinate}>
+              Tọa độ: {addressCoordinates?.latitude.toFixed(6)}, {addressCoordinates?.longitude.toFixed(6)}
+            </Text>
+            <TouchableOpacity
+              style={styles.locationConfirmButton}
+              onPress={confirmMapLocation}
+              disabled={isConfirmingLocation}
+            >
+              {isConfirmingLocation ? <ActivityIndicator color="#fff" /> : <Text style={styles.locationConfirmText}>Xác nhận vị trí này</Text>}
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -476,6 +760,17 @@ const styles = StyleSheet.create({
     fontWeight: "600", 
     flex: 1 
   },
+  refreshProfileButton: {
+    alignSelf: "flex-start",
+    marginTop: -8,
+    marginBottom: 20,
+    paddingVertical: 4,
+  },
+  refreshProfileText: {
+    color: "#2E7D32",
+    fontSize: 13,
+    fontWeight: "700",
+  },
   sectionTitle: { 
     fontSize: 16, 
     fontWeight: "700", 
@@ -486,6 +781,9 @@ const styles = StyleSheet.create({
     gap: 12,
     marginBottom: 20,
   },
+  orderSwipeWrapper: { position: "relative", overflow: "hidden", borderRadius: 16 },
+  orderDeleteBackground: { position: "absolute", top: 0, right: 0, bottom: 0, width: 92, borderRadius: 16, backgroundColor: "#D32F2F", alignItems: "center", justifyContent: "center", gap: 4 },
+  orderDeleteText: { color: "#fff", fontSize: 11, fontWeight: "800" },
   orderCard: { 
     backgroundColor: "#fff", 
     borderRadius: 16, 
@@ -625,6 +923,44 @@ const styles = StyleSheet.create({
     height: 100,
     paddingTop: 12,
   },
+  locationButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: 6,
+    marginTop: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: "#EDF7EA",
+    borderWidth: 1,
+    borderColor: "#C8E6C9",
+  },
+  locationButtonText: { color: "#2E7D32", fontSize: 12, fontWeight: "700" },
+  locationPreview: {
+    marginTop: 8,
+    padding: 10,
+    borderRadius: 10,
+    backgroundColor: "#F3F8F1",
+    borderWidth: 1,
+    borderColor: "#D5E8D2",
+  },
+  locationPreviewTitle: { color: "#356438", fontSize: 11, fontWeight: "700" },
+  locationPreviewText: { color: "#718071", fontSize: 10, marginTop: 4 },
+  locationPreviewMapWrap: { height: 150, overflow: "hidden", borderRadius: 12, marginTop: 10, position: "relative" },
+  locationPreviewMap: { ...StyleSheet.absoluteFillObject },
+  locationPreviewMapLabel: { position: "absolute", bottom: 8, alignSelf: "center", backgroundColor: "rgba(255,255,255,0.92)", borderRadius: 10, paddingHorizontal: 10, paddingVertical: 5 },
+  locationPreviewMapLabelText: { color: "#356438", fontSize: 10, fontWeight: "800" },
+  locationMapScreen: { flex: 1, backgroundColor: "#fff" },
+  locationMapHeader: { flexDirection: "row", alignItems: "center", gap: 14, paddingTop: Platform.OS === "android" ? 42 : 56, paddingHorizontal: 20, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: "#E8EEE7" },
+  locationMapHeaderText: { flex: 1 },
+  locationMapTitle: { color: "#1A2E1A", fontSize: 19, fontWeight: "800" },
+  locationMapSubtitle: { color: "#718071", fontSize: 12, marginTop: 3 },
+  locationMap: { flex: 1 },
+  locationMapFooter: { padding: 16, paddingBottom: Platform.OS === "android" ? 28 : 20, backgroundColor: "#fff", borderTopWidth: 1, borderTopColor: "#E8EEE7" },
+  locationMapCoordinate: { color: "#718071", fontSize: 11, textAlign: "center", marginBottom: 10 },
+  locationConfirmButton: { alignItems: "center", justifyContent: "center", minHeight: 48, borderRadius: 14, backgroundColor: "#F4512A" },
+  locationConfirmText: { color: "#fff", fontSize: 15, fontWeight: "800" },
   buttonGroup: {
     flexDirection: "row",
     gap: 12,
