@@ -60,11 +60,11 @@ const ANDROID_BOTTOM_INSET =
 const SCROLL_BOTTOM_PADDING = BOTTOM_TAB_HEIGHT + ANDROID_BOTTOM_INSET + 28;
 
 const TAB_ITEMS = [
-  { key: "home", label: "Home", icon: HomeIcon },
-  { key: "mall", label: "Mall", icon: ShoppingBagIcon },
-  { key: "explore", label: "Explore", icon: CompassIcon },
-  { key: "event", label: "Events", icon: CalendarIcon },
-  { key: "profile", label: "Profile", icon: UserIcon }
+  { key: "home", label: "Trang chủ", icon: HomeIcon },
+  { key: "mall", label: "Cửa hàng", icon: ShoppingBagIcon },
+  { key: "explore", label: "Khám phá", icon: CompassIcon },
+  { key: "event", label: "Sự kiện", icon: CalendarIcon },
+  { key: "profile", label: "Hồ sơ", icon: UserIcon }
 ] as const;
 
 type TabKey = (typeof TAB_ITEMS)[number]["key"];

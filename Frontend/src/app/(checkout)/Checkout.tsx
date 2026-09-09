@@ -220,7 +220,7 @@ export default function CheckoutScreen({
                     const isSelected = appliedCoupon === item.code;
                     return (
                       <TouchableOpacity
-                        key={idx}
+                        key={`${item.code || 'voucher'}-${idx}`}
                         style={[styles.voucherPill, isSelected && styles.voucherPillSelected]}
                         onPress={() => {
                           if (isSelected) handleRemoveCoupon();

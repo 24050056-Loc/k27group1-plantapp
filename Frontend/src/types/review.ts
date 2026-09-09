@@ -43,4 +43,6 @@ export type CreateReviewPayload = {
   noi_dung: string;
   images: string[]; // Uri array from image picker
   category_tag?: string;
+  user_name?: string;
+  user_avatar?: string | null;
 };

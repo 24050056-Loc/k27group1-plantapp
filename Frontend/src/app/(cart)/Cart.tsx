@@ -233,7 +233,7 @@ function StarterKitCard({ kit, onAdd, isAdding }: StarterKitCardProps) {
       {/* Item list */}
       <View style={kitStyles.itemList}>
         {kit.items.map((it, idx) => (
-          <Text key={idx} style={kitStyles.kitItem}>
+          <Text key={`${kit.id ?? kit.name}-${it}-${idx}`} style={kitStyles.kitItem}>
             {it}
           </Text>
         ))}

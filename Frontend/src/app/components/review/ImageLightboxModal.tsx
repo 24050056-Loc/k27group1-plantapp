@@ -96,7 +96,7 @@ export const ImageLightboxModal: React.FC<ImageLightboxModalProps> = ({
           >
             {images.map((img, idx) => (
               <TouchableOpacity
-                key={idx}
+                key={`${img}-${idx}`}
                 onPress={() => setCurrentIndex(idx)}
                 style={[
                   styles.thumbnailWrapper,

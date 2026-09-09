@@ -53,17 +53,19 @@ export const ReviewCard: React.FC<ReviewCardProps> = ({
     }
   };
 
+  const reviewText = review.noi_dung || "";
+
   const handleShare = async () => {
     try {
       await Share.share({
-        message: `Xem bài viết của ${review.user_name} trên PlantApp: "${review.noi_dung}"`
+        message: `Xem bài viết của ${review.user_name || "Người dùng"} trên PlantApp: "${reviewText}"`
       });
     } catch (error) {
       console.log(error);
     }
   };
 
-  const mediaUrls = review.media?.map((m) => m.media_url) || [];
+  const mediaUrls = review.media?.map((m) => m.media_url).filter(Boolean) || [];
 
   const renderImageCollage = () => {
     if (mediaUrls.length === 0) return null;
@@ -85,7 +87,7 @@ export const ReviewCard: React.FC<ReviewCardProps> = ({
         <View style={styles.dualImageRow}>
           {mediaUrls.map((url, idx) => (
             <TouchableOpacity
-              key={idx}
+              key={`${url}-${idx}`}
               activeOpacity={0.9}
               onPress={() => onPressImage?.(mediaUrls, idx)}
               style={styles.halfImageWrapper}
@@ -110,7 +112,7 @@ export const ReviewCard: React.FC<ReviewCardProps> = ({
           <View style={styles.rightStackColumn}>
             {mediaUrls.slice(1, 3).map((url, idx) => (
               <TouchableOpacity
-                key={idx}
+                key={`${url}-${idx}`}
                 activeOpacity={0.9}
                 onPress={() => onPressImage?.(mediaUrls, idx + 1)}
                 style={styles.halfHeightImageWrapper}
@@ -133,7 +135,7 @@ export const ReviewCard: React.FC<ReviewCardProps> = ({
           const isLast = idx === displayCount - 1 && extraCount > 0;
           return (
             <TouchableOpacity
-              key={idx}
+              key={`${url}-${idx}`}
               activeOpacity={0.9}
               onPress={() => onPressImage?.(mediaUrls, idx)}
               style={styles.quadImageWrapper}
@@ -210,9 +212,9 @@ export const ReviewCard: React.FC<ReviewCardProps> = ({
           style={styles.contentText}
           numberOfLines={expandedText ? undefined : 3}
         >
-          {review.noi_dung}
+          {reviewText}
         </Text>
-        {review.noi_dung.length > 120 && !expandedText && (
+        {reviewText.length > 120 && !expandedText && (
           <Text style={styles.readMoreText}>Xem thêm</Text>
         )}
       </TouchableOpacity>

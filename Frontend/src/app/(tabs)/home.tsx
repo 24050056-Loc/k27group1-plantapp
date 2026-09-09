@@ -167,9 +167,9 @@ function StarterKitCarousel() {
 
       {/* Pagination dots */}
       <View style={carouselStyles.dotsRow}>
-        {STARTER_KITS.map((_, i) => (
+        {STARTER_KITS.map((item, i) => (
           <TouchableOpacity
-            key={i}
+            key={`starter-dot-${item.id ?? i}`}
             onPress={() => {
               scrollRef.current?.scrollTo({ x: i * CARD_WIDTH, animated: true });
               setActiveIndex(i);

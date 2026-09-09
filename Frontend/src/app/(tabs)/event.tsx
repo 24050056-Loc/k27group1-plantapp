@@ -473,7 +473,7 @@ function MissionSheet({
 
           <ScrollView style={styles.sheetList} showsVerticalScrollIndicator={false}>
             {MISSION_DATA.map((m, i) => (
-              <View key={i} style={styles.missionRow}>
+              <View key={`mission-row-${m.label}`} style={styles.missionRow}>
                 <View style={[styles.missionIconBox, { backgroundColor: missions[i] ? "#E8F5E9" : "#FFF8E1", borderColor: missions[i] ? "#A5D6A7" : "#FFD54F" }]}>
                   {missions[i]
                     ? <CheckCircle2 size={18} stroke="#2E7D32" />
@@ -1259,7 +1259,7 @@ export default function EventScreen({ onOpenExplore }: EventScreenProps) {
               </View>
               <View style={styles.missionDots}>
                 {MISSION_DATA.map((_, i) => (
-                  <View key={i} style={[styles.missionDot, { backgroundColor: missions[i] ? "#2E7D32" : "#E0E0E0" }]} />
+                  <View key={`mission-dot-${i}`} style={[styles.missionDot, { backgroundColor: missions[i] ? "#2E7D32" : "#E0E0E0" }]} />
                 ))}
               </View>
               <ChevronRight size={18} stroke="#A5D6A7" />
@@ -1292,7 +1292,7 @@ export default function EventScreen({ onOpenExplore }: EventScreenProps) {
               </View>
             ) : (
               collectedVouchers.map((v, idx) => (
-                <View key={idx} style={styles.couponCard}>
+                <View key={`${v.code || 'voucher'}-${idx}`} style={styles.couponCard}>
                   <View style={styles.couponLeft}>
                     <View style={styles.couponBadge}>
                       <Text style={styles.couponBadgeText}>🌿 Đã lưu từ cây ảo</Text>
