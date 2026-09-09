@@ -70,4 +70,5 @@ export type User = {
   vai_tro: string;
   dia_chi?: string | null;
   so_dien_thoai?: string | null;
+  avatar?: string | null;
 };

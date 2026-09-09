@@ -62,8 +62,8 @@ const SCROLL_BOTTOM_PADDING = BOTTOM_TAB_HEIGHT + ANDROID_BOTTOM_INSET + 28;
 const TAB_ITEMS = [
   { key: "home", label: "Home", icon: HomeIcon },
   { key: "mall", label: "Mall", icon: ShoppingBagIcon },
-  { key: "explore", label: "Khám Phá", icon: CompassIcon },
-  { key: "event", label: "Sự kiện", icon: CalendarIcon },
+  { key: "explore", label: "Explore", icon: CompassIcon },
+  { key: "event", label: "Events", icon: CalendarIcon },
   { key: "profile", label: "Profile", icon: UserIcon }
 ] as const;
 
