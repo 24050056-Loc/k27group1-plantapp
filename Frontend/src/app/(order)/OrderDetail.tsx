@@ -11,7 +11,7 @@ import {
   Platform,
 } from "react-native";
 import { ChevronLeft, Trash2, Phone, MapPin } from "lucide-react-native";
-import { OrderDetail } from "../../types";
+import { OrderDetail, calculateDisplayOrderTotal, normalizeShippingFee } from "../../types";
 import { resolveProductImageByName } from "../../assets/productImages";
 import { useAuth } from "../../context/AuthContext";
 import { cancelOrder, getOrderDetail } from "../../services/orderService";
@@ -145,8 +145,12 @@ export default function OrderDetailScreen({ orderId, onBack }: Props) {
     (sum, item) => sum + Number(item.gia_tien || 0) * Number(item.so_luong || 0),
     0
   );
-  const shippingFee = Number(order.phi_van_chuyen || 0);
-  const calculatedTotal = Number(order.tong_thanh_toan || subtotal + shippingFee);
+  const shippingFee = normalizeShippingFee(order.phi_van_chuyen);
+  const calculatedTotal = calculateDisplayOrderTotal(
+    subtotal,
+    shippingFee,
+    order.tong_thanh_toan
+  );
 
   return (
     <View style={styles.container}>
@@ -266,17 +270,13 @@ export default function OrderDetailScreen({ orderId, onBack }: Props) {
               </Text>
             </View>
 
-            {order.phi_van_chuyen && (
-              <>
-                <View style={styles.divider} />
-                <View style={styles.summaryRow}>
-                  <Text style={styles.summaryLabel}>Phí vận chuyển</Text>
-                  <Text style={styles.summaryValue}>
-                    {parseFloat(order.phi_van_chuyen).toLocaleString("vi-VN")}đ
-                  </Text>
-                </View>
-              </>
-            )}
+            <View style={styles.divider} />
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Phí vận chuyển</Text>
+              <Text style={styles.summaryValue}>
+                {shippingFee.toLocaleString("vi-VN")}đ
+              </Text>
+            </View>
 
             <View style={styles.divider} />
             <View style={styles.summaryRow}>

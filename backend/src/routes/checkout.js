@@ -3,6 +3,8 @@ const router = express.Router();
 const pool = require('../db.js');
 const authenticateToken = require('../middlewares/authMiddleware.js');
 
+const SHIPPING_FEE = 30000;
+
 router.post('/', authenticateToken, async (req, res) => {
     // 1. Kiểm tra input cơ bản trước khi mở connection để tiết kiệm tài nguyên
     const { dia_chi_giao_hang } = req.body;
@@ -47,18 +49,33 @@ router.post('/', authenticateToken, async (req, res) => {
         let so_tien_giam = 0;
         let coupon_id = null;
         let ma_giam_gia = req.body.ma_giam_gia ? req.body.ma_giam_gia.trim() : null;
+        let personalCouponUsed = null;
 
         if (ma_giam_gia) {
-            const [couponRows] = await connection.execute(
-                'SELECT * FROM coupons WHERE ma_code = ? AND dang_ap_dung = TRUE',
-                [ma_giam_gia]
+            const normalizedCode = ma_giam_gia.toUpperCase();
+            const [personalCouponRows] = await connection.execute(
+                'SELECT * FROM user_coupons WHERE user_id = ? AND code = ? AND status = "available" AND expires_at > NOW() LIMIT 1',
+                [userId, normalizedCode]
             );
-            if (couponRows.length > 0) {
-                const coupon = couponRows[0];
-                coupon_id = coupon.id; // Lấy coupon_id để lưu vào bảng orders
-                so_tien_giam = coupon.loai_giam_gia === 'phan_tram'
-                    ? Math.min(tong_tien, tong_tien * (Number(coupon.gia_tri_giam) / 100))
-                    : Math.min(tong_tien, Number(coupon.gia_tri_giam));
+
+            if (personalCouponRows.length > 0) {
+                const personalCoupon = personalCouponRows[0];
+                personalCouponUsed = personalCoupon;
+                so_tien_giam = personalCoupon.discount_type === 'phan_tram'
+                    ? Math.min(tong_tien, tong_tien * (Number(personalCoupon.discount_value) / 100))
+                    : Math.min(tong_tien, Number(personalCoupon.discount_value));
+            } else {
+                const [couponRows] = await connection.execute(
+                    'SELECT * FROM coupons WHERE ma_code = ? AND dang_ap_dung = TRUE',
+                    [normalizedCode]
+                );
+                if (couponRows.length > 0) {
+                    const coupon = couponRows[0];
+                    coupon_id = coupon.id;
+                    so_tien_giam = coupon.loai_giam_gia === 'phan_tram'
+                        ? Math.min(tong_tien, tong_tien * (Number(coupon.gia_tri_giam) / 100))
+                        : Math.min(tong_tien, Number(coupon.gia_tri_giam));
+                }
             }
         }
 
@@ -70,7 +87,7 @@ router.post('/', authenticateToken, async (req, res) => {
             [userId, coupon_id, tong_tien, so_tien_giam, dia_chi_giao_hang]
         );
         const orderId = orderResult.insertId;
-        const tong_thanh_toan = Math.max(0, tong_tien - so_tien_giam);
+        const tong_thanh_toan = Math.max(0, tong_tien - so_tien_giam + SHIPPING_FEE);
 
         // 5. Tối ưu Queries: Cập nhật kho và chuẩn bị dữ liệu Bulk Insert cho order_items
         for (let item of cartItems) {
@@ -92,6 +109,15 @@ router.post('/', authenticateToken, async (req, res) => {
             );
         }
 
+        if (personalCouponUsed) {
+            await connection.execute(
+                `UPDATE user_coupons
+                 SET status = 'used', used_at = NOW()
+                 WHERE id = ? AND user_id = ? AND status = 'available' AND expires_at > NOW()`,
+                [personalCouponUsed.id, userId]
+            );
+        }
+
         // 6. Xóa giỏ hàng
         await connection.execute(`DELETE FROM cart WHERE user_id = ?`, [userId]);
 
@@ -103,6 +129,7 @@ router.post('/', authenticateToken, async (req, res) => {
             order_id: orderId,
             tong_tien_hang: tong_tien,
             so_tien_giam: so_tien_giam,
+            phi_van_chuyen: SHIPPING_FEE,
             tong_thanh_toan: tong_thanh_toan,
         });
 

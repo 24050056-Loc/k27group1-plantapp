@@ -1,6 +1,37 @@
 // Shared TypeScript types cho PlantApp
 // Các field dùng tên tiếng Việt để khớp với response từ backend PlantShop
 
+export const DEFAULT_SHIPPING_FEE = 30000;
+
+export function normalizeShippingFee(value?: string | number | null): number {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_SHIPPING_FEE;
+}
+
+export function calculateCheckoutTotal(
+  subtotal: number,
+  shippingFee: number = DEFAULT_SHIPPING_FEE,
+  discountAmount: number = 0
+): number {
+  return Math.max(0, subtotal - discountAmount) + shippingFee;
+}
+
+export function calculateDisplayOrderTotal(
+  subtotal: number,
+  shippingFee?: string | number | null,
+  backendTotal?: string | number | null
+): number {
+  const fee = normalizeShippingFee(shippingFee);
+  const backendValue = Number(backendTotal ?? 0);
+  const subtotalWithShipping = subtotal + fee;
+
+  if (!Number.isFinite(backendValue) || backendValue <= 0) {
+    return subtotalWithShipping;
+  }
+
+  return Math.max(subtotalWithShipping, backendValue);
+}
+
 export type Product = {
   id: number;
   category_id: number | null;

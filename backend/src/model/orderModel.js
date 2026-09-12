@@ -3,10 +3,14 @@ const pool = require('../db.js'); // Hãy đảm bảo đường dẫn tới fil
 const Order = {
     // 1. Lấy toàn bộ đơn hàng (Đã sửa chuẩn cột ngay_dat_hang)
     getAll: async () => {
-        const query = 'SELECT * FROM orders ORDER BY ngay_dat_hang DESC';
-
-        // Thêm dòng này vào để xem Terminal có in ra không
-        console.log("=== HỆ THỐNG ĐANG CHẠY CÂU LỆNH SQL NÀY: ===", query);
+        const query = `
+            SELECT
+                o.*,
+                30000 AS phi_van_chuyen,
+                (o.tong_tien_hang - o.so_tien_giam_gia + 30000) AS tong_thanh_toan
+            FROM orders o
+            ORDER BY o.ngay_dat_hang DESC
+        `;
 
         const [rows] = await pool.execute(query);
         return rows;
@@ -17,6 +21,8 @@ const Order = {
         const query = `
             SELECT
                 o.*,
+                30000 AS phi_van_chuyen,
+                (o.tong_tien_hang - o.so_tien_giam_gia + 30000) AS tong_thanh_toan,
                 u.ho_ten AS ten_nguoi_nhan,
                 u.so_dien_thoai AS so_dien_thoai_nhan
             FROM orders o

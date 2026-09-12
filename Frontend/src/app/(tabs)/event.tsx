@@ -42,6 +42,16 @@ const FERT_REDUCE_MS = 60 * 60 * 1000;              // Bón phân:  -60 phút
 const DEFAULT_WATER_MAX = 3;
 const DEFAULT_FERT_MAX = 1;
 
+const getDayKey = (timestamp: number) => {
+  const date = new Date(timestamp);
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+};
+
+const shouldResetDailyPlant = (timestamp: number) => {
+  if (!timestamp || Number.isNaN(timestamp)) return false;
+  return getDayKey(timestamp) < getDayKey(Date.now());
+};
+
 type Seed = {
   id: string;
   name: string;
@@ -314,20 +324,88 @@ function formatTime(ms: number): string {
 }
 
 // ─── Component: VoucherDialog ─────────────────────────────────────────────────
+function LegacyResetConfirmDialog({
+  visible,
+  stage,
+  currentStage,
+  onCancel,
+  onConfirm,
+}: {
+  visible: boolean;
+  stage: StageKey;
+  currentStage?: StageKey;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const meta = STAGE_META[stage];
+  const slideAnim = useRef(new Animated.Value(300)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (visible) {
+      Animated.parallel([
+        Animated.timing(fadeAnim, { toValue: 1, duration: 220, useNativeDriver: true }),
+        Animated.spring(slideAnim, { toValue: 0, tension: 80, friction: 10, useNativeDriver: true }),
+      ]).start();
+    } else {
+      Animated.parallel([
+        Animated.timing(fadeAnim, { toValue: 0, duration: 180, useNativeDriver: true }),
+        Animated.timing(slideAnim, { toValue: 300, duration: 180, useNativeDriver: true }),
+      ]).start();
+    }
+  }, [visible]);
+
+  return (
+    <Modal transparent visible={visible} animationType="none">
+      <Animated.View style={[styles.modalBackdrop, { opacity: fadeAnim }]}>
+        <Animated.View style={[styles.voucherDialog, { transform: [{ translateY: slideAnim }] }]}>
+          <View style={styles.voucherDialogHeader}>
+            <Text style={styles.voucherDialogEmoji}>⚠️</Text>
+            <Text style={styles.voucherDialogTitle}>Bạn chắc chắn muốn reset cây?</Text>
+            <Text style={styles.voucherDialogSubtitle}>
+              Bạn đang ở giai đoạn {currentStage !== undefined ? STAGE_META[currentStage].label : 'hiện tại'}. Nếu lấy voucher {meta.label}, cây sẽ reset về đầu và bạn sẽ bắt đầu trồng lại từ hạt giống mới.
+            </Text>
+          </View>
+
+          <View style={styles.voucherCurrentBox}>
+            <View style={styles.voucherCurrentBadge}>
+              <Gift size={18} stroke="#FF8F00" />
+              <Text style={styles.voucherCurrentLabel}>{meta.voucher.label}</Text>
+            </View>
+            <Text style={styles.voucherCode}>Mã: {meta.voucher.code}</Text>
+          </View>
+
+          <View style={styles.confirmRow}>
+            <TouchableOpacity style={styles.cancelResetBtn} onPress={onCancel}>
+              <Text style={styles.cancelResetText}>Ở lại</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.confirmResetBtn} onPress={onConfirm}>
+              <Text style={styles.confirmResetText}>Reset cây & lấy voucher</Text>
+            </TouchableOpacity>
+          </View>
+        </Animated.View>
+      </Animated.View>
+    </Modal>
+  );
+}
+
 function VoucherDialog({
   visible,
   stage,
+  currentStage,
   onClaimNow,
   onContinue,
 }: {
   visible: boolean;
   stage: StageKey;
+  currentStage?: StageKey;
   onClaimNow: () => void;
   onContinue: () => void;
 }) {
   const meta = STAGE_META[stage];
   const nextStage = (stage < 4 ? stage + 1 : null) as StageKey | null;
   const nextMeta = nextStage ? STAGE_META[nextStage] : null;
+  const isPreviousReward = currentStage !== undefined && stage < currentStage;
   const slideAnim = useRef(new Animated.Value(300)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
@@ -352,9 +430,13 @@ function VoucherDialog({
           {/* Header */}
           <View style={styles.voucherDialogHeader}>
             <Text style={styles.voucherDialogEmoji}>{meta.emoji}</Text>
-            <Text style={styles.voucherDialogTitle}>Cây đạt {meta.label}!</Text>
+            <Text style={styles.voucherDialogTitle}>
+              {isPreviousReward ? `Nhận voucher ${meta.label}` : `Cây đạt ${meta.label}!`}
+            </Text>
             <Text style={styles.voucherDialogSubtitle}>
-              Bạn đã mở khóa phần thưởng mới 🎉
+              {isPreviousReward
+                ? `Bạn đang ở giai đoạn ${STAGE_META[currentStage ?? stage].label}. Nếu lấy voucher cũ, cây sẽ reset và bạn bắt đầu lại từ đầu.`
+                : 'Bạn đã mở khóa phần thưởng mới 🎉'}
             </Text>
           </View>
 
@@ -380,8 +462,12 @@ function VoucherDialog({
               <Gift size={22} stroke="#fff" />
             </View>
             <View style={styles.voucherOptionText}>
-              <Text style={styles.voucherOptionTitle}>🎁 Lấy voucher ngay</Text>
-              <Text style={styles.voucherOptionDesc}>{meta.voucher.label}</Text>
+              <Text style={styles.voucherOptionTitle}>
+                {isPreviousReward ? '🎁 Lấy voucher cũ' : '🎁 Lấy voucher ngay'}
+              </Text>
+              <Text style={styles.voucherOptionDesc}>
+                {isPreviousReward ? 'Cây sẽ reset và bạn sẽ tiếp tục trồng lại từ đầu' : meta.voucher.label}
+              </Text>
             </View>
           </TouchableOpacity>
 
@@ -665,6 +751,7 @@ export default function EventScreen({ onOpenExplore }: EventScreenProps) {
   const [missions, setMissions] = useState([false, false, false, false, false]);
   const [claimedVouchers, setClaimedVouchers] = useState<StageKey[]>([]);
   const [pendingVoucherStage, setPendingVoucherStage] = useState<StageKey | null>(null);
+  const [legacyResetConfirmStage, setLegacyResetConfirmStage] = useState<StageKey | null>(null);
   const [missionOpen, setMissionOpen] = useState(false);
   const [notifOn, setNotifOn] = useState(false);
   const [remainingMs, setRemainingMs] = useState(STAGE_BASE_DURATION_MS);
@@ -685,6 +772,7 @@ export default function EventScreen({ onOpenExplore }: EventScreenProps) {
     missions: boolean[];
     claimedVouchers: StageKey[];
     notifOn: boolean;
+    resetReason?: string;
   }) => {
     if (!user?.id || !progressLoadedRef.current || !progressApiAvailableRef.current) return;
     try {
@@ -701,6 +789,7 @@ export default function EventScreen({ onOpenExplore }: EventScreenProps) {
         missions: progress.missions,
         claimedVouchers: progress.claimedVouchers,
         notifOn: progress.notifOn,
+        resetReason: progress.resetReason || "daily",
       });
     } catch (error) {
       if (axios.isAxiosError(error) && error.response?.status === 404) {
@@ -711,6 +800,82 @@ export default function EventScreen({ onOpenExplore }: EventScreenProps) {
     }
   }, [user?.id]);
 
+  const resetDailyPlant = useCallback((seedToKeep: Seed | null = selectedSeed) => {
+    const nextStartTime = Date.now();
+    const nextMissions = [false, false, false, false, false];
+    const nextClaimedVouchers: StageKey[] = [];
+
+    setSelectedSeed(null);
+    setStage(0);
+    setStageStartTime(nextStartTime);
+    setTimeReduced(0);
+    setWaterTurns(DEFAULT_WATER_MAX);
+    setFertTurns(DEFAULT_FERT_MAX);
+    setWaterMax(DEFAULT_WATER_MAX);
+    setFertMax(DEFAULT_FERT_MAX);
+    setMissions(nextMissions);
+    setClaimedVouchers(nextClaimedVouchers);
+    setRemainingMs(STAGE_BASE_DURATION_MS);
+    setSeedPickerOpen(true);
+    stageStartTimeRef.current = nextStartTime;
+    timeReducedRef.current = 0;
+
+    if (user?.id && progressLoadedRef.current && progressApiAvailableRef.current) {
+      saveProgress({
+        selectedSeed: null,
+        stage: 0,
+        stageStartTime: nextStartTime,
+        timeReduced: 0,
+        waterTurns: DEFAULT_WATER_MAX,
+        fertTurns: DEFAULT_FERT_MAX,
+        waterMax: DEFAULT_WATER_MAX,
+        fertMax: DEFAULT_FERT_MAX,
+        missions: nextMissions,
+        claimedVouchers: nextClaimedVouchers,
+        notifOn,
+        resetReason: "daily",
+      });
+    }
+  }, [selectedSeed, user?.id, notifOn, saveProgress]);
+
+  const resetPlantForNewSeed = useCallback(() => {
+    const nextStartTime = Date.now();
+    const resetMissions = [false, false, false, false, false];
+    const resetClaimed: StageKey[] = [];
+
+    setSelectedSeed(null);
+    setStage(0);
+    setStageStartTime(nextStartTime);
+    setTimeReduced(0);
+    setWaterTurns(DEFAULT_WATER_MAX);
+    setFertTurns(DEFAULT_FERT_MAX);
+    setWaterMax(DEFAULT_WATER_MAX);
+    setFertMax(DEFAULT_FERT_MAX);
+    setMissions(resetMissions);
+    setClaimedVouchers(resetClaimed);
+    setRemainingMs(STAGE_BASE_DURATION_MS);
+    stageStartTimeRef.current = nextStartTime;
+    timeReducedRef.current = 0;
+    setSeedPickerOpen(true);
+
+    if (user?.id && progressLoadedRef.current && progressApiAvailableRef.current) {
+      saveProgress({
+        selectedSeed: null,
+        stage: 0,
+        stageStartTime: nextStartTime,
+        timeReduced: 0,
+        waterTurns: DEFAULT_WATER_MAX,
+        fertTurns: DEFAULT_FERT_MAX,
+        waterMax: DEFAULT_WATER_MAX,
+        fertMax: DEFAULT_FERT_MAX,
+        missions: resetMissions,
+        claimedVouchers: resetClaimed,
+        notifOn,
+        resetReason: "seed_reset",
+      });
+    }
+  }, [user?.id, notifOn, saveProgress]);
+
   useEffect(() => {
     if (!user?.id) return;
     const loadProgress = async () => {
@@ -718,8 +883,33 @@ export default function EventScreen({ onOpenExplore }: EventScreenProps) {
         const response = await axiosClient.get("/api/game/progress", { params: { userId: user.id } });
         const progress = response.data?.data;
         if (progress) {
+          const loadedSelectedSeed = SEED_DATA.find(seed => seed.id === progress.selected_seed) || null;
+          const loadedStageStartTime = Number(progress.stage_start_time || Date.now());
+
+          if (shouldResetDailyPlant(loadedStageStartTime)) {
+            const resetMissions = [false, false, false, false, false];
+            const resetClaimed: StageKey[] = [];
+
+            setSelectedSeed(null);
+            setStage(0);
+            setStageStartTime(Date.now());
+            setTimeReduced(0);
+            setWaterTurns(DEFAULT_WATER_MAX);
+            setFertTurns(DEFAULT_FERT_MAX);
+            setWaterMax(DEFAULT_WATER_MAX);
+            setFertMax(DEFAULT_FERT_MAX);
+            setRemainingMs(STAGE_BASE_DURATION_MS);
+            setSeedPickerOpen(true);
+            stageStartTimeRef.current = Date.now();
+            timeReducedRef.current = 0;
+            setMissions(resetMissions);
+            setClaimedVouchers(resetClaimed);
+            setNotifOn(Boolean(progress.notif_on));
+            return;
+          }
+
           setStage(progress.stage as StageKey);
-          setStageStartTime(Number(progress.stage_start_time));
+          setStageStartTime(loadedStageStartTime);
           setTimeReduced(Number(progress.time_reduced));
           setWaterTurns(Number(progress.water_turns));
           setFertTurns(Number(progress.fert_turns));
@@ -728,7 +918,7 @@ export default function EventScreen({ onOpenExplore }: EventScreenProps) {
           setMissions(progress.missions);
           setClaimedVouchers(progress.claimed_vouchers);
           setNotifOn(Boolean(progress.notif_on));
-          setSelectedSeed(SEED_DATA.find(seed => seed.id === progress.selected_seed) || null);
+          setSelectedSeed(loadedSelectedSeed);
         }
       } catch (error) {
         if (axios.isAxiosError(error) && error.response?.status === 404) {
@@ -771,6 +961,11 @@ export default function EventScreen({ onOpenExplore }: EventScreenProps) {
   useEffect(() => { stageRef.current = stage; }, [stage]);
 
   const syncStageProgress = useCallback((currentStage: StageKey, currentStageStartTime: number, currentTimeReduced: number) => {
+    if (shouldResetDailyPlant(currentStageStartTime)) {
+      resetDailyPlant(selectedSeed);
+      return;
+    }
+
     if (currentStage === 0) {
       setRemainingMs(0);
       Animated.timing(progressAnim, {
@@ -817,7 +1012,7 @@ export default function EventScreen({ onOpenExplore }: EventScreenProps) {
         notifOn,
       });
     }
-  }, [progressAnim, saveProgress, selectedSeed, waterTurns, fertTurns, waterMax, fertMax, missions, claimedVouchers, notifOn]);
+  }, [progressAnim, resetDailyPlant, saveProgress, selectedSeed, waterTurns, fertTurns, waterMax, fertMax, missions, claimedVouchers, notifOn]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -925,52 +1120,172 @@ export default function EventScreen({ onOpenExplore }: EventScreenProps) {
   const { addVoucher, collectedVouchers } = useVoucher();
   const [activeSubTab, setActiveSubTab] = useState<"game" | "promotions">("game");
   const [storeCoupons, setStoreCoupons] = useState<any[]>([]);
+  const [myCoupons, setMyCoupons] = useState<any[]>([]);
   const [loadingCoupons, setLoadingCoupons] = useState(false);
+  const [loadingMyCoupons, setLoadingMyCoupons] = useState(false);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const [unlockedSeeds, setUnlockedSeeds] = useState<Seed[]>([]);
   const [seedInfo, setSeedInfo] = useState<Seed | null>(null);
   const [seedPickerOpen, setSeedPickerOpen] = useState(false);
 
   useEffect(() => {
-    if (activeSubTab === "promotions") {
-      async function fetchCoupons() {
-        setLoadingCoupons(true);
-        try {
-          const res = await axiosClient.get("/coupons");
-          if (res.data?.success && Array.isArray(res.data.data)) {
-            setStoreCoupons(res.data.data);
+    if (activeSubTab !== "promotions") return;
+
+    async function fetchCoupons() {
+      setLoadingCoupons(true);
+      setLoadingMyCoupons(true);
+      try {
+        const [storeRes, myRes] = await Promise.allSettled([
+          axiosClient.get("/coupons"),
+          axiosClient.get("/coupons/my")
+        ]);
+
+        if (storeRes.status === "fulfilled") {
+          const storeData = storeRes.value?.data;
+          const list = Array.isArray(storeData?.data)
+            ? storeData.data
+            : Array.isArray(storeData)
+              ? storeData
+              : [];
+          setStoreCoupons(list);
+        } else {
+          const status = (storeRes.reason as any)?.response?.status;
+          if (status !== 404) {
+            console.error("Lỗi lấy danh sách coupons:", storeRes.reason);
           }
-        } catch (e) {
-          console.error("Lỗi lấy danh sách coupons:", e);
-        } finally {
-          setLoadingCoupons(false);
+          setStoreCoupons([]);
         }
+
+        if (myRes.status === "fulfilled") {
+          const myData = myRes.value?.data;
+          const list = Array.isArray(myData?.data)
+            ? myData.data
+            : Array.isArray(myData)
+              ? myData
+              : [];
+          setMyCoupons(list);
+        } else {
+          const status = (myRes.reason as any)?.response?.status;
+          if (status !== 404) {
+            console.error("Lỗi lấy danh sách coupon của tôi:", myRes.reason);
+          }
+          setMyCoupons([]);
+        }
+      } catch (e) {
+        const status = (e as any)?.response?.status;
+        if (status !== 404) {
+          console.error("Lỗi lấy danh sách coupons:", e);
+        }
+      } finally {
+        setLoadingCoupons(false);
+        setLoadingMyCoupons(false);
       }
-      fetchCoupons();
     }
-  }, [activeSubTab]);
+
+    fetchCoupons();
+  }, [activeSubTab, user?.id]);
+
+  const formatCouponExpiry = (value?: string | null) => {
+    if (!value) return "Chưa có hạn";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    return date.toLocaleString("vi-VN", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  };
+
+  const getUserCouponStatus = (coupon: any) => {
+    if (coupon.status === "used") return { label: "Đã dùng", color: "#8B5E3C", bg: "#FDE7D9" };
+    if (coupon.status === "expired") return { label: "Hết hạn", color: "#C62828", bg: "#FDE2E2" };
+    return { label: "Còn hiệu lực", color: "#2E7D32", bg: "#E8F5E9" };
+  };
 
   const handleCopyCode = (code: string, label: string) => {
     addVoucher(code, label);
     setCopiedCode(code);
     setTimeout(() => setCopiedCode(null), 2000);
   };
+
+  const claimVoucherForStage = useCallback(async (stageToClaim: StageKey) => {
+    const meta = STAGE_META[stageToClaim];
+
+    const finalizeLocalClaim = (code: string) => {
+      const nextClaimedVouchers = claimedVouchers.includes(stageToClaim)
+        ? claimedVouchers
+        : [...claimedVouchers, stageToClaim];
+
+      setClaimedVouchers(nextClaimedVouchers);
+      addVoucher(code, meta.voucher.label, meta.desc);
+
+      if (stageToClaim < stage) {
+        saveProgress({
+          selectedSeed: null,
+          stage: 0,
+          stageStartTime: Date.now(),
+          timeReduced: 0,
+          waterTurns: DEFAULT_WATER_MAX,
+          fertTurns: DEFAULT_FERT_MAX,
+          waterMax: DEFAULT_WATER_MAX,
+          fertMax: DEFAULT_FERT_MAX,
+          missions: [false, false, false, false, false],
+          claimedVouchers: [],
+          notifOn,
+          resetReason: "legacy_voucher_reset",
+        });
+        resetPlantForNewSeed();
+      } else {
+        saveProgress({ selectedSeed, stage, stageStartTime, timeReduced, waterTurns, fertTurns, waterMax, fertMax, missions, claimedVouchers: nextClaimedVouchers, notifOn, resetReason: "stage_voucher_claim" });
+      }
+
+      setPendingVoucherStage(null);
+      setLegacyResetConfirmStage(null);
+    };
+
+    try {
+      const payload = {
+        userId: user?.id,
+        stage: stageToClaim,
+        label: meta.voucher.label,
+        description: meta.desc,
+        discountType: meta.voucher.icon === "truck" ? "so_tien_co_dinh" : "phan_tram",
+        discountValue: meta.voucher.icon === "truck" ? 50000 : Number(meta.voucher.code.replace(/\D/g, '')) || 10,
+      };
+
+      const res = await axiosClient.post('/coupons/claim-event', payload);
+      const createdCoupon = res.data?.data;
+      const code = createdCoupon?.code || meta.voucher.code;
+      finalizeLocalClaim(code);
+
+      if (notifOn) {
+        await sendVoucherReadyNotification(meta.voucher.label, meta.label);
+      }
+    } catch (error: any) {
+      const isMissingEndpoint = error?.response?.status === 404;
+
+      if (isMissingEndpoint) {
+        finalizeLocalClaim(meta.voucher.code);
+        if (notifOn) {
+          await sendVoucherReadyNotification(meta.voucher.label, meta.label);
+        }
+        return;
+      }
+
+      console.error('Lỗi nhận voucher sự kiện:', error);
+      Alert.alert('Không thể nhận voucher', 'Vui lòng thử lại sau.');
+    }
+  }, [addVoucher, claimedVouchers, notifOn, resetPlantForNewSeed, saveProgress, selectedSeed, stage, stageStartTime, timeReduced, waterTurns, fertTurns, waterMax, fertMax, missions, user?.id]);
+
   const handleClaimVoucher = useCallback(async () => {
     if (!pendingVoucherStage) return;
-    setClaimedVouchers(prev =>
-      prev.includes(pendingVoucherStage) ? prev : [...prev, pendingVoucherStage]
-    );
-    const nextClaimedVouchers = claimedVouchers.includes(pendingVoucherStage)
-      ? claimedVouchers
-      : [...claimedVouchers, pendingVoucherStage];
-    const meta = STAGE_META[pendingVoucherStage];
-    addVoucher(meta.voucher.code, meta.voucher.label, meta.desc);
-    setPendingVoucherStage(null);
-    saveProgress({ selectedSeed, stage, stageStartTime, timeReduced, waterTurns, fertTurns, waterMax, fertMax, missions, claimedVouchers: nextClaimedVouchers, notifOn });
-    if (notifOn) {
-      await sendVoucherReadyNotification(meta.voucher.label, meta.label);
-    }
-  }, [pendingVoucherStage, notifOn, addVoucher, claimedVouchers, selectedSeed, stage, stageStartTime, timeReduced, waterTurns, fertTurns, waterMax, fertMax, missions, saveProgress]);
+    await claimVoucherForStage(pendingVoucherStage);
+  }, [claimVoucherForStage, pendingVoucherStage]);
+
+  const confirmLegacyVoucherReset = useCallback((stageToClaim: StageKey) => {
+    setLegacyResetConfirmStage(stageToClaim);
+  }, []);
+
+  const handleLegacyResetConfirm = useCallback(async () => {
+    if (!legacyResetConfirmStage) return;
+    await claimVoucherForStage(legacyResetConfirmStage);
+  }, [claimVoucherForStage, legacyResetConfirmStage]);
 
   // ── Handler: Tiếp tục trồng ───────────────────────────────────────────────
   const handleContinuePlanting = useCallback(() => {
@@ -1222,6 +1537,13 @@ export default function EventScreen({ onOpenExplore }: EventScreenProps) {
                       >
                         <Text style={styles.rewardClaimBtnText}>Nhận</Text>
                       </TouchableOpacity>
+                    ) : stage > s ? (
+                      <TouchableOpacity
+                        style={[styles.rewardClaimBtn, { backgroundColor: "#FF8F00" }]}
+                        onPress={() => confirmLegacyVoucherReset(s)}
+                      >
+                        <Text style={styles.rewardClaimBtnText}>Lấy cũ</Text>
+                      </TouchableOpacity>
                     ) : (
                       <View style={[styles.rewardLockTag, { opacity: unlocked ? 1 : 0.4 }]}>
                         <Text style={styles.rewardLockText}>{unlocked ? "Sẵn sàng" : "🔒 Chờ"}</Text>
@@ -1284,8 +1606,50 @@ export default function EventScreen({ onOpenExplore }: EventScreenProps) {
         ) : (
           /* ── Khuyến Mãi Tab ───────────────────────────────────────────────────── */
           <View>
+            {/* Voucher của tôi */}
+            <Text style={styles.promoSectionTitle}>🎟️ Danh sách voucher của tôi ({myCoupons.length || collectedVouchers.length})</Text>
+            {loadingMyCoupons ? (
+              <ActivityIndicator size="small" color="#2E7D32" style={{ marginVertical: 12 }} />
+            ) : myCoupons.length === 0 ? (
+              <View style={styles.emptyVoucherBox}>
+                <Text style={styles.emptyVoucherText}>Bạn chưa có voucher nào. Hãy hoàn thành giai đoạn cây để nhận voucher mới.</Text>
+              </View>
+            ) : (
+              myCoupons.map((coupon, idx) => {
+                const status = getUserCouponStatus(coupon);
+                return (
+                  <View key={`${coupon.code || 'my-coupon'}-${idx}`} style={styles.couponCard}>
+                    <View style={styles.couponLeft}>
+                      <View style={[styles.couponBadge, { backgroundColor: status.bg }]}>
+                        <Text style={[styles.couponBadgeText, { color: status.color }]}>{status.label}</Text>
+                      </View>
+                      <Text style={styles.couponCodeText}>{coupon.code}</Text>
+                      <Text style={styles.couponDesc}>{coupon.label || "Voucher sự kiện"}</Text>
+                      <Text style={styles.couponMetaText}>HSD: {formatCouponExpiry(coupon.expires_at)}</Text>
+                    </View>
+                    <TouchableOpacity
+                      style={[styles.copyBtn, copiedCode === coupon.code && styles.copyBtnSuccess]}
+                      onPress={() => handleCopyCode(coupon.code, coupon.label || "Voucher sự kiện")}
+                    >
+                      {copiedCode === coupon.code ? (
+                        <>
+                          <CheckCircle2 size={14} stroke="#fff" />
+                          <Text style={styles.copyBtnText}>Đã lấy ✓</Text>
+                        </>
+                      ) : (
+                        <>
+                          <Copy size={14} stroke="#fff" />
+                          <Text style={styles.copyBtnText}>Sao chép</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                );
+              })
+            )}
+
             {/* Voucher đã tích lũy từ cây ảo */}
-            <Text style={styles.promoSectionTitle}>🎟️ Ví Voucher của bạn ({collectedVouchers.length})</Text>
+            <Text style={styles.promoSectionTitle}>🌿 Voucher đã lưu từ cây ảo ({collectedVouchers.length})</Text>
             {collectedVouchers.length === 0 ? (
               <View style={styles.emptyVoucherBox}>
                 <Text style={styles.emptyVoucherText}>Chưa có voucher nào. Hãy nuôi cây để đổi voucher!</Text>
@@ -1373,8 +1737,35 @@ export default function EventScreen({ onOpenExplore }: EventScreenProps) {
         <VoucherDialog
           visible={!!pendingVoucherStage}
           stage={pendingVoucherStage}
-          onClaimNow={handleClaimVoucher}
+          currentStage={stage}
+          onClaimNow={() => {
+            if (pendingVoucherStage < stage) {
+              setLegacyResetConfirmStage(pendingVoucherStage);
+              setPendingVoucherStage(null);
+            } else {
+              claimVoucherForStage(pendingVoucherStage);
+            }
+          }}
           onContinue={handleContinuePlanting}
+        />
+      )}
+
+      {legacyResetConfirmStage && (
+        <LegacyResetConfirmDialog
+          visible={!!legacyResetConfirmStage}
+          stage={legacyResetConfirmStage}
+          currentStage={stage}
+          onCancel={() => {
+            setLegacyResetConfirmStage(null);
+            setPendingVoucherStage(null);
+          }}
+          onConfirm={async () => {
+            const stageToReset = legacyResetConfirmStage;
+            setLegacyResetConfirmStage(null);
+            if (stageToReset) {
+              await claimVoucherForStage(stageToReset);
+            }
+          }}
         />
       )}
 
@@ -1776,6 +2167,38 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: "#E0E0E0",
   },
+  confirmRow: {
+    flexDirection: "row",
+    gap: 12,
+    marginTop: 18,
+  },
+  cancelResetBtn: {
+    flex: 1,
+    backgroundColor: "#EEF3EE",
+    borderRadius: 14,
+    paddingVertical: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  cancelResetText: {
+    color: "#2E7D32",
+    fontWeight: "700",
+    fontSize: 14,
+  },
+  confirmResetBtn: {
+    flex: 1.3,
+    backgroundColor: "#E65100",
+    borderRadius: 14,
+    paddingVertical: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  confirmResetText: {
+    color: "#fff",
+    fontWeight: "800",
+    fontSize: 14,
+    textAlign: "center",
+  },
   voucherOptionIcon: {
     width: 48,
     height: 48,
@@ -1949,6 +2372,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#666",
     marginTop: 4,
+  },
+  couponMetaText: {
+    fontSize: 11,
+    color: "#6B7F6B",
+    marginTop: 4,
+    fontWeight: "600",
   },
   copyBtn: {
     backgroundColor: "#2E7D32",

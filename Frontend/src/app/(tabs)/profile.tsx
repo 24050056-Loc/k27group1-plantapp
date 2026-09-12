@@ -10,7 +10,7 @@ import * as ImagePicker from "expo-image-picker";
 import { useAuth } from "../../context/AuthContext";
 import { getUserOrders, getUserProfile, updateUserAvatar, updateUserProfile } from "../../services/userService";
 import { deleteOrder } from "../../services/orderService";
-import { Order } from "../../types";
+import { Order, DEFAULT_SHIPPING_FEE } from "../../types";
 
 type Props = {
   onLogout: () => void;
@@ -47,8 +47,6 @@ function SwipeableCancelledOrder({
     </View>
   );
 }
-
-const SHIPPING_FEE = 30000;
 
 const normalizeAvatarUrl = (value?: string | null, fallback?: string) => {
   const safeFallback = fallback || "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200&fit=crop";
@@ -459,7 +457,7 @@ export default function ProfileScreen({ onLogout, onSelectOrder }: Props) {
                 <Text style={styles.orderAddress} numberOfLines={1}>Giao tới: {order.dia_chi_giao_hang}</Text>
                 {order.tong_thanh_toan && (
                   <Text style={styles.orderTotal}>
-                    Tổng tiền: {(parseFloat(order.tong_thanh_toan) + SHIPPING_FEE).toLocaleString("vi-VN")}đ
+                    Tổng tiền: {Number(order.tong_thanh_toan || 0).toLocaleString("vi-VN")}đ
                   </Text>
                 )}
               </>

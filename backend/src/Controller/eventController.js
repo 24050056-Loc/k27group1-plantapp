@@ -1,22 +1,59 @@
 const pool = require('../db.js'); // Đường dẫn tới file cấu hình kết nối MySQL pool của bạn
 
-const ensureProgressTable = pool.query(`
-    CREATE TABLE IF NOT EXISTS event_progress (
-        user_id INT PRIMARY KEY,
-        selected_seed VARCHAR(100) NULL,
-        stage TINYINT NOT NULL DEFAULT 0,
-        stage_start_time BIGINT NOT NULL,
-        time_reduced BIGINT NOT NULL DEFAULT 0,
-        water_turns INT NOT NULL DEFAULT 3,
-        fert_turns INT NOT NULL DEFAULT 1,
-        water_max INT NOT NULL DEFAULT 3,
-        fert_max INT NOT NULL DEFAULT 1,
-        missions JSON NOT NULL,
-        claimed_vouchers JSON NOT NULL,
-        notif_on BOOLEAN NOT NULL DEFAULT FALSE,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-    )
-`).catch(error => console.error('Lỗi tạo bảng event_progress:', error.message));
+const getDayKey = (timestamp = Date.now()) => {
+    const date = new Date(timestamp);
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+};
+
+const shouldResetDailyProgress = (progress = {}) => {
+    const currentDayKey = getDayKey();
+    const lastResetDay = Number(progress.last_reset_day || 0);
+    const stageStartDayKey = getDayKey(Number(progress.stage_start_time || Date.now()));
+    return lastResetDay < currentDayKey || stageStartDayKey < currentDayKey;
+};
+
+const resetProgressForNewDay = (progress = {}, resetReason = 'daily') => ({
+    selected_seed: progress.selected_seed || null,
+    stage: 1,
+    stage_start_time: Date.now(),
+    time_reduced: 0,
+    water_turns: 3,
+    fert_turns: 1,
+    water_max: 3,
+    fert_max: 1,
+    missions: [false, false, false, false, false],
+    claimed_vouchers: [],
+    notif_on: Boolean(progress.notif_on),
+    last_reset_day: getDayKey(),
+    reset_reason: resetReason,
+});
+
+const ensureProgressTable = Promise.all([
+    pool.query(`
+        CREATE TABLE IF NOT EXISTS event_progress (
+            user_id INT PRIMARY KEY,
+            selected_seed VARCHAR(100) NULL,
+            stage TINYINT NOT NULL DEFAULT 0,
+            stage_start_time BIGINT NOT NULL,
+            time_reduced BIGINT NOT NULL DEFAULT 0,
+            water_turns INT NOT NULL DEFAULT 3,
+            fert_turns INT NOT NULL DEFAULT 1,
+            water_max INT NOT NULL DEFAULT 3,
+            fert_max INT NOT NULL DEFAULT 1,
+            missions JSON NOT NULL,
+            claimed_vouchers JSON NOT NULL,
+            notif_on BOOLEAN NOT NULL DEFAULT FALSE,
+            last_reset_day BIGINT NOT NULL DEFAULT 0,
+            reset_reason VARCHAR(50) NOT NULL DEFAULT 'daily',
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        )
+    `),
+    pool.query(`
+        ALTER TABLE event_progress
+        ADD COLUMN IF NOT EXISTS last_reset_day BIGINT NOT NULL DEFAULT 0,
+        ADD COLUMN IF NOT EXISTS reset_reason VARCHAR(50) NOT NULL DEFAULT 'daily'
+    `)
+]).catch(error => console.error('Lỗi tạo bảng event_progress:', error.message));
 
 const seedCatalog = [
     { id: 'sen', name: 'Hoa Sen', category: 'Dưới nước' },
@@ -41,9 +78,38 @@ exports.getProgress = async (req, res) => {
         if (rows.length === 0) return res.json({ success: true, data: null });
 
         const progress = rows[0];
-        progress.missions = parseJsonValue(progress.missions);
-        progress.claimed_vouchers = parseJsonValue(progress.claimed_vouchers);
-        res.json({ success: true, data: progress });
+        const shouldReset = shouldResetDailyProgress(progress);
+        const nextProgress = shouldReset ? resetProgressForNewDay(progress, progress.reset_reason || 'daily') : progress;
+
+        if (shouldReset) {
+            await pool.query(`
+                UPDATE event_progress
+                SET selected_seed = ?, stage = ?, stage_start_time = ?, time_reduced = ?,
+                    water_turns = ?, fert_turns = ?, water_max = ?, fert_max = ?,
+                    missions = ?, claimed_vouchers = ?, notif_on = ?, last_reset_day = ?, reset_reason = ?
+                WHERE user_id = ?
+            `, [
+                nextProgress.selected_seed,
+                nextProgress.stage,
+                nextProgress.stage_start_time,
+                nextProgress.time_reduced,
+                nextProgress.water_turns,
+                nextProgress.fert_turns,
+                nextProgress.water_max,
+                nextProgress.fert_max,
+                JSON.stringify(nextProgress.missions),
+                JSON.stringify(nextProgress.claimed_vouchers),
+                Boolean(nextProgress.notif_on),
+                nextProgress.last_reset_day,
+                nextProgress.reset_reason || 'daily',
+                userId,
+            ]);
+        }
+
+        const returnedProgress = { ...nextProgress, missions: parseJsonValue(nextProgress.missions), claimed_vouchers: parseJsonValue(nextProgress.claimed_vouchers) };
+        const responseResetReason = returnedProgress.reset_reason || 'daily';
+        console.log('[event_progress]', { userId, shouldReset, reset_reason: responseResetReason });
+        res.json({ success: true, data: returnedProgress, reset_reason: responseResetReason });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
@@ -53,7 +119,7 @@ exports.saveProgress = async (req, res) => {
     const { userId } = req.body;
     const {
         selectedSeed, stage, stageStartTime, timeReduced, waterTurns, fertTurns,
-        waterMax, fertMax, missions, claimedVouchers, notifOn
+        waterMax, fertMax, missions, claimedVouchers, notifOn, resetReason
     } = req.body;
     if (!userId || !Array.isArray(missions) || !Array.isArray(claimedVouchers)) {
         return res.status(400).json({ success: false, message: 'Dữ liệu tiến trình không hợp lệ' });
@@ -61,24 +127,72 @@ exports.saveProgress = async (req, res) => {
 
     try {
         await ensureProgressTable;
+        const [existingRows] = await pool.query('SELECT * FROM event_progress WHERE user_id = ?', [userId]);
+        const currentProgress = existingRows[0] || {};
+        const resetRequired = shouldResetDailyProgress(currentProgress);
+        const nextProgress = resetRequired
+            ? resetProgressForNewDay({
+                ...currentProgress,
+                selected_seed: selectedSeed || currentProgress.selected_seed || null,
+                stage: stage ?? 1,
+                stage_start_time: stageStartTime || Date.now(),
+                time_reduced: timeReduced || 0,
+                water_turns: waterTurns ?? 3,
+                fert_turns: fertTurns ?? 1,
+                water_max: waterMax ?? 3,
+                fert_max: fertMax ?? 1,
+                missions,
+                claimed_vouchers: claimedVouchers,
+                notif_on: Boolean(notifOn),
+                reset_reason: resetReason || 'daily',
+            }, resetReason || 'daily')
+            : {
+                selected_seed: selectedSeed || currentProgress.selected_seed || null,
+                stage: stage ?? currentProgress.stage ?? 0,
+                stage_start_time: stageStartTime || currentProgress.stage_start_time || Date.now(),
+                time_reduced: timeReduced || currentProgress.time_reduced || 0,
+                water_turns: waterTurns ?? currentProgress.water_turns ?? 3,
+                fert_turns: fertTurns ?? currentProgress.fert_turns ?? 1,
+                water_max: waterMax ?? currentProgress.water_max ?? 3,
+                fert_max: fertMax ?? currentProgress.fert_max ?? 1,
+                missions,
+                claimed_vouchers: claimedVouchers,
+                notif_on: Boolean(notifOn),
+                last_reset_day: getDayKey(),
+                reset_reason: resetReason || currentProgress.reset_reason || 'daily',
+            };
+
         await pool.query(`
             INSERT INTO event_progress
                 (user_id, selected_seed, stage, stage_start_time, time_reduced, water_turns, fert_turns,
-                 water_max, fert_max, missions, claimed_vouchers, notif_on)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 water_max, fert_max, missions, claimed_vouchers, notif_on, last_reset_day, reset_reason)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON DUPLICATE KEY UPDATE
                 selected_seed = VALUES(selected_seed), stage = VALUES(stage),
                 stage_start_time = VALUES(stage_start_time), time_reduced = VALUES(time_reduced),
                 water_turns = VALUES(water_turns), fert_turns = VALUES(fert_turns),
                 water_max = VALUES(water_max), fert_max = VALUES(fert_max),
                 missions = VALUES(missions), claimed_vouchers = VALUES(claimed_vouchers),
-                notif_on = VALUES(notif_on)
+                notif_on = VALUES(notif_on), last_reset_day = VALUES(last_reset_day), reset_reason = VALUES(reset_reason)
         `, [
-            userId, selectedSeed || null, stage ?? 0, stageStartTime || Date.now(), timeReduced || 0,
-            waterTurns ?? 3, fertTurns ?? 1, waterMax ?? 3, fertMax ?? 1,
-            JSON.stringify(missions), JSON.stringify(claimedVouchers), Boolean(notifOn)
+            userId,
+            nextProgress.selected_seed || null,
+            nextProgress.stage ?? 0,
+            nextProgress.stage_start_time || Date.now(),
+            nextProgress.time_reduced || 0,
+            nextProgress.water_turns ?? 3,
+            nextProgress.fert_turns ?? 1,
+            nextProgress.water_max ?? 3,
+            nextProgress.fert_max ?? 1,
+            JSON.stringify(nextProgress.missions),
+            JSON.stringify(nextProgress.claimed_vouchers),
+            Boolean(nextProgress.notif_on),
+            nextProgress.last_reset_day || getDayKey(),
+            nextProgress.reset_reason || 'daily',
         ]);
-        res.json({ success: true, message: 'Đã lưu tiến trình sự kiện' });
+        const responseResetReason = nextProgress.reset_reason || 'daily';
+        console.log('[event_progress_save]', { userId, reset_reason: responseResetReason, stage: nextProgress.stage });
+        res.json({ success: true, message: 'Đã lưu tiến trình sự kiện', reset_reason: responseResetReason });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }

@@ -133,9 +133,17 @@ router.get('/:id/orders', async (req, res) => {
     try {
         const userId = req.params.id;
         const sql = `
-            SELECT id, tong_thanh_toan, trang_thai, ngay_dat_hang, dia_chi_giao_hang 
-            FROM orders 
-            WHERE user_id = ? 
+            SELECT
+                id,
+                tong_tien_hang,
+                so_tien_giam_gia,
+                (tong_tien_hang - so_tien_giam_gia + 30000) AS tong_thanh_toan,
+                30000 AS phi_van_chuyen,
+                trang_thai,
+                ngay_dat_hang,
+                dia_chi_giao_hang
+            FROM orders
+            WHERE user_id = ?
             ORDER BY ngay_dat_hang DESC
         `;
         const [rows] = await pool.execute(sql, [userId]);

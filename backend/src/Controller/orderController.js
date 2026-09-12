@@ -5,7 +5,17 @@ const orderController = {
     getAllOrders: async (req, res) => {
         try {
             const orders = await Order.getAll();
-            res.status(200).json(orders);
+            const shippingFee = 30000;
+            const normalizedOrders = orders.map((order) => {
+                const subtotal = Number(order.tong_tien_hang || 0);
+                const discount = Number(order.so_tien_giam_gia || 0);
+                return {
+                    ...order,
+                    phi_van_chuyen: shippingFee,
+                    tong_thanh_toan: Math.max(0, subtotal - discount + shippingFee),
+                };
+            });
+            res.status(200).json(normalizedOrders);
         } catch (error) {
             console.error("Lỗi get orders:", error);
             res.status(500).json({ message: "Lỗi khi lấy danh sách đơn hàng", error: error.message });
@@ -20,10 +30,14 @@ const orderController = {
 
             // Lấy thêm danh sách sản phẩm thuộc đơn hàng này
             const items = await Order.getItemsByOrderId(req.params.id);
+            const shippingFee = 30000;
+            const finalTotal = Math.max(0, Number(order.tong_tien_hang || 0) - Number(order.so_tien_giam_gia || 0) + shippingFee);
 
             // Trả về gộp chung dữ liệu tổng quan và chi tiết
             res.status(200).json({
                 ...order,
+                phi_van_chuyen: shippingFee,
+                tong_thanh_toan: finalTotal,
                 items: items
             });
         } catch (error) {

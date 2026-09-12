@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from "react";
+import * as Location from "expo-location";
+import MapView, { Marker, Region } from "react-native-maps";
 import {
   View,
   Text,
@@ -9,6 +11,7 @@ import {
   ActivityIndicator,
   ScrollView,
   Platform,
+  Modal,
 } from "react-native";
 import {
   MapPin,
@@ -26,6 +29,7 @@ import { useAuth } from "../../context/AuthContext";
 import { useVoucher } from "../../context/VoucherContext";
 import { placeOrder, validateCoupon } from "../../services/checkoutService";
 import { getCart } from "../../services/cartService";
+import { calculateCheckoutTotal, DEFAULT_SHIPPING_FEE } from "../../types";
 
 type Props = {
   onBack: () => void;
@@ -35,6 +39,25 @@ type Props = {
 };
 
 const SHIPPING_FEE = 30000;
+
+function formatDetectedAddress(place: Location.LocationGeocodedAddress | undefined): string {
+  if (!place) return "";
+
+  const isPlusCode = (value?: string | null) => Boolean(value && /^[A-Z0-9]{4,}\+[A-Z0-9]{2,}/i.test(value.trim()));
+  const parts = [
+    !isPlusCode(place.name) ? place.name : null,
+    place.street,
+    place.district,
+    place.subregion,
+    place.city,
+    place.region,
+    place.country,
+  ];
+
+  return parts
+    .filter((part, index, values): part is string => Boolean(part) && values.indexOf(part) === index)
+    .join(", ");
+}
 
 export default function CheckoutScreen({
   onBack,
@@ -46,10 +69,15 @@ export default function CheckoutScreen({
   const { collectedVouchers } = useVoucher();
 
   const [address, setAddress] = useState(user?.dia_chi || "");
-  const [addressConfirmed, setAddressConfirmed] = useState(false);
+  const [addressConfirmed, setAddressConfirmed] = useState(Boolean(user?.dia_chi));
   const [loading, setLoading] = useState(false);
   const [cartSubtotal, setCartSubtotal] = useState(0);
   const [fetchingCart, setFetchingCart] = useState(true);
+  const [locatingAddress, setLocatingAddress] = useState(false);
+  const [addressCoordinates, setAddressCoordinates] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [locationRegion, setLocationRegion] = useState<Region | null>(null);
+  const [isLocationMapVisible, setIsLocationMapVisible] = useState(false);
+  const [isConfirmingLocation, setIsConfirmingLocation] = useState(false);
 
   // Coupon state
   const [couponCodeInput, setCouponCodeInput] = useState("");
@@ -83,6 +111,75 @@ export default function CheckoutScreen({
     }
     loadCartSubtotal();
   }, [token]);
+
+  useEffect(() => {
+    const nextAddress = user?.dia_chi || "";
+    setAddress(nextAddress);
+    setAddressConfirmed(Boolean(nextAddress.trim()));
+  }, [user?.dia_chi]);
+
+  const useCurrentLocationForAddress = async () => {
+    if (locatingAddress) return;
+    setLocatingAddress(true);
+    try {
+      if (!(await Location.hasServicesEnabledAsync())) {
+        Alert.alert("Chưa bật vị trí", "Vui lòng bật GPS/Vị trí trên điện thoại rồi thử lại.");
+        return;
+      }
+
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (permission.status !== Location.PermissionStatus.GRANTED) {
+        Alert.alert("Cần quyền vị trí", "Hãy cho phép ứng dụng truy cập vị trí để tự điền địa chỉ.");
+        return;
+      }
+
+      const currentLocation = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.High });
+      const coordinates = {
+        latitude: currentLocation.coords.latitude,
+        longitude: currentLocation.coords.longitude,
+      };
+
+      setAddressCoordinates(coordinates);
+      setLocationRegion({
+        ...coordinates,
+        latitudeDelta: 0.0025,
+        longitudeDelta: 0.0025,
+      });
+      setIsLocationMapVisible(true);
+    } catch (error) {
+      console.error("Lỗi xác định vị trí trên Checkout:", error);
+      Alert.alert("Không thể xác định vị trí", "Vui lòng thử lại hoặc nhập địa chỉ thủ công.");
+    } finally {
+      setLocatingAddress(false);
+    }
+  };
+
+  const confirmMapLocation = async () => {
+    if (!addressCoordinates || isConfirmingLocation) return;
+
+    setIsConfirmingLocation(true);
+    try {
+      const [place] = await Location.reverseGeocodeAsync(addressCoordinates);
+      const detectedAddress = formatDetectedAddress(place);
+      if (!detectedAddress) {
+        Alert.alert("Không tìm thấy địa chỉ", "Bạn có thể kéo ghim đến vị trí khác hoặc nhập thủ công.");
+        return;
+      }
+
+      setAddress(detectedAddress);
+      setAddressConfirmed(true);
+      setIsLocationMapVisible(false);
+    } catch (error) {
+      Alert.alert("Không thể xác định địa chỉ", "Vui lòng thử lại với vị trí khác.");
+    } finally {
+      setIsConfirmingLocation(false);
+    }
+  };
+
+  const updateMapCoordinate = (coordinate: { latitude: number; longitude: number }) => {
+    setAddressCoordinates(coordinate);
+    setLocationRegion((current) => current ? { ...current, ...coordinate } : null);
+  };
 
   // Áp dụng mã giảm giá
   const handleApplyCoupon = async (codeToApply?: string) => {
@@ -123,7 +220,7 @@ export default function CheckoutScreen({
     setCouponStatusMsg(null);
   };
 
-  const finalTotal = Math.max(0, cartSubtotal - discountAmount) + SHIPPING_FEE;
+  const finalTotal = calculateCheckoutTotal(cartSubtotal, DEFAULT_SHIPPING_FEE, discountAmount);
 
   const handleChoosePayment = async (type: "COD" | "QR") => {
     if (!address.trim() || !addressConfirmed) {
@@ -137,7 +234,9 @@ export default function CheckoutScreen({
       const result = await placeOrder(token, address.trim(), appliedCoupon || undefined);
 
       if (result.success && result.order_id) {
-        const payable = result.tong_thanh_toan ?? finalTotal;
+        // Luôn dùng tổng cuối cùng của checkout để đảm bảo phí vận chuyển được cộng vào
+        // Vì một số backend trả về tổng chưa bao gồm shipping.
+        const payable = finalTotal;
         onCheckoutSuccess(result.order_id, payable);
         if (type === "COD") {
           onChooseCOD();
@@ -181,16 +280,28 @@ export default function CheckoutScreen({
             <TextInput
               value={address}
               editable={false}
-              placeholder="Hãy cập nhật địa chỉ trong trang Profile"
+              placeholder="Hãy cập nhật địa chỉ trong trang Profile hoặc lấy vị trí hiện tại"
               placeholderTextColor="#999"
               multiline
               style={styles.addressInput}
             />
+
+            <TouchableOpacity
+              style={[styles.locationButton, locatingAddress && styles.locationButtonDisabled]}
+              onPress={useCurrentLocationForAddress}
+              disabled={locatingAddress || loading}
+            >
+              <MapPin size={16} color="#2E7D32" />
+              <Text style={styles.locationButtonText}>
+                {locatingAddress ? "Đang xác định vị trí..." : "Lấy vị trí hiện tại"}
+              </Text>
+            </TouchableOpacity>
+
             <TouchableOpacity
               style={[styles.confirmAddressButton, addressConfirmed && styles.confirmAddressButtonDone]}
               onPress={() => {
                 if (!address.trim()) {
-                  Alert.alert("Thiếu địa chỉ", "Vui lòng cập nhật địa chỉ trong trang Profile trước.");
+                  Alert.alert("Thiếu địa chỉ", "Vui lòng lấy vị trí hoặc nhập địa chỉ trước khi xác nhận.");
                   return;
                 }
                 setAddressConfirmed(true);
@@ -203,6 +314,59 @@ export default function CheckoutScreen({
               </Text>
             </TouchableOpacity>
           </View>
+
+          <Modal
+            visible={isLocationMapVisible}
+            animationType="slide"
+            transparent={false}
+            onRequestClose={() => setIsLocationMapVisible(false)}
+          >
+            <View style={styles.locationMapScreen}>
+              <View style={styles.locationMapHeader}>
+                <TouchableOpacity onPress={() => setIsLocationMapVisible(false)}>
+                  <X size={20} color="#1A2E1A" />
+                </TouchableOpacity>
+                <View style={styles.locationMapHeaderText}>
+                  <Text style={styles.locationMapTitle}>Xác nhận vị trí</Text>
+                  <Text style={styles.locationMapSubtitle}>Chạm hoặc kéo ghim đến đúng vị trí</Text>
+                </View>
+              </View>
+
+              {locationRegion && addressCoordinates && (
+                <MapView
+                  style={styles.locationMap}
+                  initialRegion={locationRegion}
+                  onRegionChangeComplete={(region) => {
+                    updateMapCoordinate({ latitude: region.latitude, longitude: region.longitude });
+                    setLocationRegion(region);
+                  }}
+                  showsUserLocation
+                  showsMyLocationButton
+                >
+                  <Marker coordinate={addressCoordinates} />
+                </MapView>
+              )}
+
+              <View style={styles.locationMapFooter}>
+                <Text style={styles.locationMapCoordinate}>
+                  {addressCoordinates
+                    ? `${addressCoordinates.latitude.toFixed(5)}, ${addressCoordinates.longitude.toFixed(5)}`
+                    : "Đang xác định tọa độ"}
+                </Text>
+                <TouchableOpacity
+                  style={[styles.locationConfirmButton, isConfirmingLocation && styles.locationConfirmButtonDisabled]}
+                  onPress={confirmMapLocation}
+                  disabled={isConfirmingLocation}
+                >
+                  {isConfirmingLocation ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text style={styles.locationConfirmText}>Xác nhận vị trí này</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </Modal>
 
           {/* Section 2: Mã giảm giá & Voucher */}
           <View style={styles.card}>
@@ -426,6 +590,41 @@ const styles = StyleSheet.create({
   confirmAddressButtonDone: { backgroundColor: "#2E7D32", borderColor: "#2E7D32" },
   confirmAddressText: { color: "#2E7D32", fontSize: 12, fontWeight: "700" },
   confirmAddressTextDone: { color: "#fff" },
+  locationButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    marginTop: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: "#F0F7ED",
+    borderWidth: 1,
+    borderColor: "#C8E6C9",
+  },
+  locationButtonDisabled: { opacity: 0.6 },
+  locationButtonText: { color: "#2E7D32", fontSize: 12, fontWeight: "700" },
+  locationMapScreen: { flex: 1, backgroundColor: "#fff" },
+  locationMapHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    paddingTop: Platform.OS === "android" ? 42 : 56,
+    paddingHorizontal: 20,
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E8EEE7",
+  },
+  locationMapHeaderText: { flex: 1 },
+  locationMapTitle: { color: "#1A2E1A", fontSize: 19, fontWeight: "800" },
+  locationMapSubtitle: { color: "#718071", fontSize: 12, marginTop: 3 },
+  locationMap: { flex: 1 },
+  locationMapFooter: { padding: 16, paddingBottom: Platform.OS === "android" ? 28 : 20, backgroundColor: "#fff", borderTopWidth: 1, borderTopColor: "#E8EEE7" },
+  locationMapCoordinate: { color: "#718071", fontSize: 11, textAlign: "center", marginBottom: 10 },
+  locationConfirmButton: { alignItems: "center", justifyContent: "center", minHeight: 48, borderRadius: 14, backgroundColor: "#2E7D32" },
+  locationConfirmButtonDisabled: { opacity: 0.7 },
+  locationConfirmText: { color: "#fff", fontSize: 15, fontWeight: "800" },
   paymentCardDisabled: { opacity: 0.45 },
   subLabel: { fontSize: 12, fontWeight: "600", color: "#666", marginTop: 4 },
   voucherSection: { marginBottom: 10 },

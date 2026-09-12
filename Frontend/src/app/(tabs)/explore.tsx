@@ -20,7 +20,6 @@ import { ReviewCard } from "../components/review/ReviewCard";
 import { CreatePostModal } from "../components/review/CreatePostModal";
 import { ImageLightboxModal } from "../components/review/ImageLightboxModal";
 import { CommentSheetModal } from "../components/review/CommentSheetModal";
-import { useAuth } from "../../context/AuthContext";
 
 const normalizeAvatarUrl = (value?: string | null, fallback = "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150") => {
   if (!value) return fallback;
