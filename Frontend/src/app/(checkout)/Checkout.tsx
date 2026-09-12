@@ -82,6 +82,7 @@ export default function CheckoutScreen({
   // Coupon state
   const [couponCodeInput, setCouponCodeInput] = useState("");
   const [appliedCoupon, setAppliedCoupon] = useState<string | null>(null);
+  const [userCouponId, setUserCouponId] = useState<number | null>(null);
   const [discountAmount, setDiscountAmount] = useState(0);
   const [validatingCoupon, setValidatingCoupon] = useState(false);
   const [couponStatusMsg, setCouponStatusMsg] = useState<{
@@ -192,10 +193,13 @@ export default function CheckoutScreen({
     setValidatingCoupon(true);
     setCouponStatusMsg(null);
 
-    const res = await validateCoupon(code, cartSubtotal);
+    const res = await validateCoupon(code, cartSubtotal, user?.id);
 
     if (res.success && res.so_tien_giam_gia !== undefined) {
       setAppliedCoupon(code);
+      if (res.data?.user_coupon_id) {
+        setUserCouponId(res.data.user_coupon_id);
+      }
       setDiscountAmount(res.so_tien_giam_gia);
       setCouponStatusMsg({
         type: "success",
@@ -215,6 +219,7 @@ export default function CheckoutScreen({
 
   const handleRemoveCoupon = () => {
     setAppliedCoupon(null);
+    setUserCouponId(null);
     setDiscountAmount(0);
     setCouponCodeInput("");
     setCouponStatusMsg(null);
@@ -231,7 +236,7 @@ export default function CheckoutScreen({
 
     setLoading(true);
     try {
-      const result = await placeOrder(token, address.trim(), appliedCoupon || undefined);
+      const result = await placeOrder(token, address.trim(), userCouponId || undefined);
 
       if (result.success && result.order_id) {
         // Luôn dùng tổng cuối cùng của checkout để đảm bảo phí vận chuyển được cộng vào

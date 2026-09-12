@@ -11,6 +11,8 @@ export async function getOrderDetail(orderId: number): Promise<OrderDetail> {
     id: Number(payload.id ?? payload.order_id ?? orderId),
     user_id: Number(payload.user_id ?? payload.nguoi_dung_id ?? 0),
     tong_thanh_toan: String(payload.tong_thanh_toan ?? payload.total ?? 0),
+    tong_tien_hang: String(payload.tong_tien_hang ?? payload.subtotal ?? 0),
+    so_tien_giam_gia: String(payload.so_tien_giam_gia ?? payload.discount ?? 0),
     trang_thai: payload.trang_thai ?? payload.status ?? "",
     ngay_dat_hang: payload.ngay_dat_hang ?? payload.created_at ?? new Date().toISOString(),
     dia_chi_giao_hang: payload.dia_chi_giao_hang ?? payload.address ?? payload.dia_chi ?? "",

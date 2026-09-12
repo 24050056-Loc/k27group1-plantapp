@@ -1,5 +1,6 @@
 const express = require('express');
 const crypto = require('crypto');
+const jwt = require('jsonwebtoken');
 const router = express.Router();
 const pool = require('../db');
 const authenticateToken = require('../middlewares/authMiddleware');
@@ -7,48 +8,101 @@ const authenticateToken = require('../middlewares/authMiddleware');
 const SHIPPING_FEE = 30000;
 const COUPON_EXPIRY_DAYS = 7;
 
-const ensureUserCouponsTable = async () => {
-    await pool.execute(`
-        CREATE TABLE IF NOT EXISTS user_coupons (
-            id INT NOT NULL AUTO_INCREMENT,
-            user_id INT NOT NULL,
-            code VARCHAR(40) NOT NULL,
-            label VARCHAR(255) NOT NULL,
-            description VARCHAR(255) DEFAULT NULL,
-            discount_type ENUM('phan_tram', 'so_tien_co_dinh') NOT NULL,
-            discount_value DECIMAL(10,2) NOT NULL,
-            source_stage INT DEFAULT NULL,
-            status ENUM('available', 'used', 'expired') NOT NULL DEFAULT 'available',
-            created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-            expires_at DATETIME NOT NULL,
-            used_at DATETIME NULL,
-            PRIMARY KEY (id),
-            UNIQUE KEY uq_user_coupon_code (code),
-            KEY idx_user_coupon_owner (user_id),
-            KEY idx_user_coupon_status (status),
-            KEY idx_user_coupon_expiry (expires_at)
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-    `);
+let tableInitialized = false;
 
-    await pool.execute(`
-        ALTER TABLE user_coupons
-        ADD COLUMN IF NOT EXISTS label VARCHAR(255) NOT NULL DEFAULT '',
-        ADD COLUMN IF NOT EXISTS description VARCHAR(255) DEFAULT NULL,
-        ADD COLUMN IF NOT EXISTS discount_type ENUM('phan_tram', 'so_tien_co_dinh') NOT NULL DEFAULT 'phan_tram',
-        ADD COLUMN IF NOT EXISTS discount_value DECIMAL(10,2) NOT NULL DEFAULT 0,
-        ADD COLUMN IF NOT EXISTS source_stage INT DEFAULT NULL,
-        ADD COLUMN IF NOT EXISTS status ENUM('available', 'used', 'expired') NOT NULL DEFAULT 'available',
-        ADD COLUMN IF NOT EXISTS created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-        ADD COLUMN IF NOT EXISTS expires_at DATETIME NOT NULL DEFAULT (CURRENT_TIMESTAMP),
-        ADD COLUMN IF NOT EXISTS used_at DATETIME NULL
-    `);
+const ensureUserCouponsTable = async () => {
+    if (tableInitialized) return;
+    try {
+        await pool.execute(`
+            CREATE TABLE IF NOT EXISTS user_coupons (
+                id INT NOT NULL AUTO_INCREMENT,
+                user_id INT NOT NULL,
+                code VARCHAR(40) NOT NULL,
+                label VARCHAR(255) NOT NULL,
+                description VARCHAR(255) DEFAULT NULL,
+                discount_type ENUM('phan_tram', 'so_tien_co_dinh') NOT NULL DEFAULT 'phan_tram',
+                discount_value DECIMAL(10,2) NOT NULL DEFAULT 0,
+                source_stage INT DEFAULT NULL,
+                status ENUM('available', 'used', 'expired') NOT NULL DEFAULT 'available',
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                expires_at DATETIME NOT NULL,
+                used_at DATETIME NULL,
+                PRIMARY KEY (id),
+                UNIQUE KEY uq_user_coupon_code (code),
+                KEY idx_user_coupon_owner (user_id),
+                KEY idx_user_coupon_status (status),
+                KEY idx_user_coupon_expiry (expires_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+        `);
+
+        // Kiểm tra và bổ sung cột an toàn (tương thích mọi phiên bản MySQL)
+        const [existingCols] = await pool.query('SHOW COLUMNS FROM user_coupons');
+        const colNames = existingCols.map(c => c.Field);
+
+        if (!colNames.includes('label')) {
+            await pool.query("ALTER TABLE user_coupons ADD COLUMN label VARCHAR(255) NOT NULL DEFAULT ''");
+        }
+        if (!colNames.includes('description')) {
+            await pool.query("ALTER TABLE user_coupons ADD COLUMN description VARCHAR(255) DEFAULT NULL");
+        }
+        if (!colNames.includes('discount_type')) {
+            await pool.query("ALTER TABLE user_coupons ADD COLUMN discount_type ENUM('phan_tram', 'so_tien_co_dinh') NOT NULL DEFAULT 'phan_tram'");
+        }
+        if (!colNames.includes('discount_value')) {
+            await pool.query("ALTER TABLE user_coupons ADD COLUMN discount_value DECIMAL(10,2) NOT NULL DEFAULT 0");
+        }
+        if (!colNames.includes('source_stage')) {
+            await pool.query("ALTER TABLE user_coupons ADD COLUMN source_stage INT DEFAULT NULL");
+        }
+        if (!colNames.includes('status')) {
+            await pool.query("ALTER TABLE user_coupons ADD COLUMN status ENUM('available', 'used', 'expired') NOT NULL DEFAULT 'available'");
+        }
+        if (!colNames.includes('created_at')) {
+            await pool.query("ALTER TABLE user_coupons ADD COLUMN created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP");
+        }
+        if (!colNames.includes('expires_at')) {
+            await pool.query("ALTER TABLE user_coupons ADD COLUMN expires_at DATETIME NOT NULL");
+        }
+        if (!colNames.includes('used_at')) {
+            await pool.query("ALTER TABLE user_coupons ADD COLUMN used_at DATETIME NULL");
+        }
+        if (!colNames.includes('used_order_id')) {
+            await pool.query("ALTER TABLE user_coupons ADD COLUMN used_order_id VARCHAR(100) NULL");
+        }
+
+        tableInitialized = true;
+    } catch (error) {
+        console.error('Lỗi khởi tạo bảng user_coupons:', error);
+    }
 };
 
 const cleanupExpiredUserCoupons = async () => {
-    await pool.execute(`
-        DELETE FROM user_coupons
-        WHERE status = 'used' OR expires_at < NOW()
-    `);
+    try {
+        await pool.execute(`
+            DELETE FROM user_coupons
+            WHERE status = 'used' OR expires_at < NOW()
+        `);
+    } catch (error) {
+        console.error('Lỗi dọn dẹp user_coupons hết hạn:', error);
+    }
+};
+
+const optionalAuth = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    let token = authHeader && authHeader.split(' ')[1];
+    if (token && token.startsWith('"') && token.endsWith('"')) {
+        token = token.slice(1, -1);
+    }
+    if (!token) {
+        return next();
+    }
+    const secretKey = process.env.SECRET_KEY || 'YOUR_SECRET_KEY';
+    jwt.verify(token, secretKey, (err, decoded) => {
+        if (!err && decoded) {
+            req.user = decoded;
+        }
+        next();
+    });
 };
 
 const buildUniqueCouponCode = (prefix = 'PLANT') => {
@@ -75,16 +129,19 @@ router.get('/', async (req, res) => {
         const [rows] = await pool.execute('SELECT * FROM coupons ORDER BY id DESC');
         res.json({ success: true, data: rows });
     } catch (error) {
-        console.error('Loi lay danh sach ma giam gia:', error);
-        res.status(500).json({ success: false, message: 'Loi lay danh sach ma giam gia' });
+        console.error('Lỗi lấy danh sách mã giảm giá:', error);
+        res.status(500).json({ success: false, message: 'Lỗi lấy danh sách mã giảm giá' });
     }
 });
 
-router.get('/my', authenticateToken, async (req, res) => {
+router.get('/my', optionalAuth, async (req, res) => {
     try {
         await ensureUserCouponsTable();
         await cleanupExpiredUserCoupons();
-        const userId = Number(req.user?.id);
+        const userId = Number(req.user?.id ?? req.query.userId);
+        if (!userId) {
+            return res.json({ success: true, data: [] });
+        }
         const [rows] = await pool.execute(
             `SELECT * FROM user_coupons
              WHERE user_id = ? AND status = 'available' AND expires_at > NOW()
@@ -94,12 +151,12 @@ router.get('/my', authenticateToken, async (req, res) => {
 
         res.json({ success: true, data: rows });
     } catch (error) {
-        console.error('Loi lay danh sach coupon cua user:', error);
-        res.status(500).json({ success: false, message: 'Loi lay danh sach coupon cua user' });
+        console.error('Lỗi lấy danh sách coupon của user:', error);
+        res.status(500).json({ success: false, message: 'Lỗi lấy danh sách coupon của user' });
     }
 });
 
-router.post('/claim-event', authenticateToken, async (req, res) => {
+router.post('/claim-event', optionalAuth, async (req, res) => {
     try {
         await ensureUserCouponsTable();
         const userId = Number(req.user?.id ?? req.body.userId);
@@ -148,8 +205,8 @@ router.post('/claim-event', authenticateToken, async (req, res) => {
             }
         });
     } catch (error) {
-        console.error('Loi tao coupon user:', error);
-        res.status(500).json({ success: false, message: 'Loi tao coupon user' });
+        console.error('Lỗi tạo coupon user:', error);
+        res.status(500).json({ success: false, message: 'Lỗi tạo coupon user' });
     }
 });
 
@@ -163,17 +220,17 @@ router.get('/code/:ma_code', async (req, res) => {
         );
 
         if (rows.length === 0) {
-            return res.status(404).json({ success: false, message: 'Ma giam gia khong hop le hoac da het ap dung' });
+            return res.status(404).json({ success: false, message: 'Mã giảm giá không hợp lệ hoặc đã hết hạn' });
         }
 
         res.json({ success: true, data: rows[0] });
     } catch (error) {
-        console.error('Loi kiem tra ma giam gia:', error);
-        res.status(500).json({ success: false, message: 'Loi kiem tra ma giam gia' });
+        console.error('Lỗi kiểm tra mã giảm giá:', error);
+        res.status(500).json({ success: false, message: 'Lỗi kiểm tra mã giảm giá' });
     }
 });
 
-router.post('/validate', authenticateToken, async (req, res) => {
+router.post('/validate', optionalAuth, async (req, res) => {
     try {
         await ensureUserCouponsTable();
         await cleanupExpiredUserCoupons();
@@ -182,7 +239,7 @@ router.post('/validate', authenticateToken, async (req, res) => {
         const userId = Number(req.user?.id ?? req.body.userId);
 
         if (!ma_code) {
-            return res.status(400).json({ success: false, message: 'Vui long nhap ma giam gia' });
+            return res.status(400).json({ success: false, message: 'Vui lòng nhập mã giảm giá' });
         }
 
         const normalizedCode = String(ma_code).trim().toUpperCase();
@@ -200,6 +257,7 @@ router.post('/validate', authenticateToken, async (req, res) => {
                     success: true,
                     data: {
                         id: coupon.id,
+                        user_coupon_id: coupon.id, // ID dùng để mark khi checkout
                         ma_code: coupon.code,
                         loai_giam_gia: coupon.discount_type,
                         gia_tri_giam: coupon.discount_value,
@@ -218,7 +276,7 @@ router.post('/validate', authenticateToken, async (req, res) => {
         );
 
         if (rows.length === 0) {
-            return res.status(404).json({ success: false, message: 'Ma giam gia khong hop le hoac da het ap dung' });
+            return res.status(404).json({ success: false, message: 'Mã giảm giá không hợp lệ hoặc đã hết hạn' });
         }
 
         const coupon = rows[0];
@@ -233,8 +291,8 @@ router.post('/validate', authenticateToken, async (req, res) => {
             tong_thanh_toan: Math.max(0, total - discount + SHIPPING_FEE)
         });
     } catch (error) {
-        console.error('Loi kiem tra ma giam gia:', error);
-        res.status(500).json({ success: false, message: 'Loi kiem tra ma giam gia' });
+        console.error('Lỗi kiểm tra mã giảm giá:', error);
+        res.status(500).json({ success: false, message: 'Lỗi kiểm tra mã giảm giá' });
     }
 });
 
@@ -243,13 +301,13 @@ router.get('/:id', async (req, res) => {
         const [rows] = await pool.execute('SELECT * FROM coupons WHERE id = ?', [req.params.id]);
 
         if (rows.length === 0) {
-            return res.status(404).json({ success: false, message: 'Khong tim thay ma giam gia' });
+            return res.status(404).json({ success: false, message: 'Không tìm thấy mã giảm giá' });
         }
 
         res.json({ success: true, data: rows[0] });
     } catch (error) {
-        console.error('Loi lay ma giam gia:', error);
-        res.status(500).json({ success: false, message: 'Loi lay ma giam gia' });
+        console.error('Lỗi lấy mã giảm giá:', error);
+        res.status(500).json({ success: false, message: 'Lỗi lấy mã giảm giá' });
     }
 });
 

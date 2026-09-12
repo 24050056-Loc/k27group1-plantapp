@@ -1,5 +1,8 @@
 const pool = require('../db.js'); // Hãy đảm bảo đường dẫn tới file kết nối DB này chính xác
 
+// Dùng connection (trong transaction) nếu có, ngược lại dùng pool thông thường
+const db = (conn) => conn || pool;
+
 const Order = {
     // 1. Lấy toàn bộ đơn hàng (Đã sửa chuẩn cột ngay_dat_hang)
     getAll: async () => {
@@ -63,16 +66,17 @@ const Order = {
     },
 
     // 4. Tạo mới thông tin chung của đơn hàng
-    create: async (orderData) => {
-        const { id, user_id, coupon_id, tong_tien_hang, so_tien_giam_gia, dia_chi_giao_hang } = orderData;
+    // Nhận `conn` (connection trong transaction) để đảm bảo atomic với bước mark voucher
+    // orders.id là AUTO_INCREMENT — không truyền vào, MySQL tự sinh và trả về qua insertId
+    create: async (orderData, conn) => {
+        const { user_id, coupon_id, tong_tien_hang, so_tien_giam_gia, dia_chi_giao_hang } = orderData;
 
         const query = `
-            INSERT INTO orders (id, user_id, coupon_id, tong_tien_hang, so_tien_giam_gia, dia_chi_giao_hang, trang_thai) 
-            VALUES (?, ?, ?, ?, ?, ?, 'cho_duyet')
+            INSERT INTO orders (user_id, coupon_id, tong_tien_hang, so_tien_giam_gia, dia_chi_giao_hang, trang_thai) 
+            VALUES (?, ?, ?, ?, ?, 'cho_duyet')
         `;
 
-        await pool.execute(query, [
-            id,
+        const [result] = await db(conn).execute(query, [
             user_id,
             coupon_id || null,
             tong_tien_hang,
@@ -80,18 +84,19 @@ const Order = {
             dia_chi_giao_hang
         ]);
 
-        return id;
+        return result.insertId; // Trả về ID tự sinh từ MySQL
     },
 
     // 5. Lưu chi tiết các sản phẩm được mua vào bảng order_items
-    createItems: async (orderId, items) => {
+    // Nhận `conn` (connection trong transaction) để đảm bảo atomic với bước tạo đơn hàng
+    createItems: async (orderId, items, conn) => {
         const query = `
             INSERT INTO order_items (order_id, product_id, so_luong, gia_luc_mua) 
             VALUES (?, ?, ?, ?)
         `;
 
         for (const item of items) {
-            await pool.execute(query, [
+            await db(conn).execute(query, [
                 orderId,
                 item.product_id,
                 item.so_luong,
@@ -121,4 +126,4 @@ const Order = {
     }
 };
 
-module.exports = Order;
+module.exports = Order;

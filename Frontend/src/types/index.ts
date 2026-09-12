@@ -19,17 +19,17 @@ export function calculateCheckoutTotal(
 export function calculateDisplayOrderTotal(
   subtotal: number,
   shippingFee?: string | number | null,
-  backendTotal?: string | number | null
+  backendTotal?: string | number | null,
+  discountAmount: number = 0
 ): number {
   const fee = normalizeShippingFee(shippingFee);
   const backendValue = Number(backendTotal ?? 0);
-  const subtotalWithShipping = subtotal + fee;
 
-  if (!Number.isFinite(backendValue) || backendValue <= 0) {
-    return subtotalWithShipping;
+  if (Number.isFinite(backendValue) && backendValue > 0) {
+    return backendValue;
   }
 
-  return Math.max(subtotalWithShipping, backendValue);
+  return Math.max(0, subtotal - discountAmount) + fee;
 }
 
 export type Product = {
@@ -81,14 +81,16 @@ export type OrderItem = {
 export type OrderDetail = {
   id: number;
   user_id: number;
-  tong_thanh_toan: string;
+  tong_thanh_toan: string | number;
+  tong_tien_hang?: string | number | null;
+  so_tien_giam_gia?: string | number | null;
   trang_thai: string;
   ngay_dat_hang: string;
   dia_chi_giao_hang: string;
   so_dien_thoai_nhan?: string | null;
   ten_nguoi_nhan?: string | null;
   items: OrderItem[];
-  phi_van_chuyen?: string | null;
+  phi_van_chuyen?: string | number | null;
   ma_giam_gia?: string | null;
   ghi_chu?: string | null;
 };

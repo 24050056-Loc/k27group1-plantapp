@@ -1,4 +1,5 @@
 const Order = require('../model/orderModel');
+const pool = require('../db.js');
 
 const orderController = {
     // 1. Lấy toàn bộ đơn hàng (Cho Admin)
@@ -102,21 +103,97 @@ const orderController = {
         }
     },
 
-    // 4. Tạo đơn hàng mới (Lưu đồng thời orders và order_items)
+    // 4. Tạo đơn hàng mới — dùng Transaction + SELECT FOR UPDATE để tránh race condition voucher
+    //
+    // Quy trình atomic:
+    //   1. [Nếu có user_coupon_id] Lock hàng voucher bằng SELECT ... FOR UPDATE
+    //   2. Kiểm tra voucher còn available và chưa hết hạn
+    //   3. INSERT orders
+    //   4. INSERT order_items
+    //   5. [Nếu có user_coupon_id] Mark voucher: status='used', used_at=NOW(), used_order_id=orderId
+    //   6. COMMIT — mọi bước đều thành công
+    //
+    // Nếu bất kỳ bước nào lỗi → ROLLBACK toàn bộ, voucher KHÔNG bị đánh dấu.
     createOrder: async (req, res) => {
-        try {
-            // Tách mảng giỏ hàng 'items' ra khỏi thông tin chung của đơn hàng
-            const { items, ...orderData } = req.body;
+        const { items, user_coupon_id, ...orderData } = req.body;
 
-            if (!items || !Array.isArray(items) || items.length === 0) {
-                return res.status(400).json({ success: false, message: "Đơn hàng phải có ít nhất một sản phẩm trong giỏ hàng." });
+        if (!items || !Array.isArray(items) || items.length === 0) {
+            return res.status(400).json({ success: false, message: "Đơn hàng phải có ít nhất một sản phẩm trong giỏ hàng." });
+        }
+
+        const conn = await pool.getConnection();
+        try {
+            await conn.beginTransaction();
+
+            // ── Bước 1: Kiểm tra & Lock voucher (nếu có) ────────────────────────────
+            if (user_coupon_id) {
+                const [voucherRows] = await conn.execute(
+                    `SELECT id, status, expires_at, code
+                     FROM user_coupons
+                     WHERE id = ?
+                     FOR UPDATE`,           // Pessimistic lock: chặn request khác đọc/ghi hàng này
+                    [user_coupon_id]
+                );
+
+                if (voucherRows.length === 0) {
+                    await conn.rollback();
+                    return res.status(404).json({
+                        success: false,
+                        message: "Voucher không tồn tại."
+                    });
+                }
+
+                const voucher = voucherRows[0];
+
+                if (voucher.status !== 'available') {
+                    await conn.rollback();
+                    return res.status(409).json({
+                        success: false,
+                        message: "Voucher này đã được sử dụng. Vui lòng chọn voucher khác.",
+                        voucher_code: voucher.code,
+                    });
+                }
+
+                if (new Date(voucher.expires_at) < new Date()) {
+                    await conn.rollback();
+                    return res.status(410).json({
+                        success: false,
+                        message: "Voucher đã hết hạn.",
+                        voucher_code: voucher.code,
+                    });
+                }
             }
 
-            // Bước 1: Lưu thông tin chung vào bảng `orders`
-            const newOrderId = await Order.create(orderData);
+            // ── Bước 2: Tạo đơn hàng ────────────────────────────────────────────────
+            const newOrderId = await Order.create(orderData, conn);
 
-            // Bước 2: Lưu các sản phẩm trong giỏ vào bảng `order_items`
-            await Order.createItems(newOrderId, items);
+            // ── Bước 3: Lưu chi tiết sản phẩm ───────────────────────────────────────
+            await Order.createItems(newOrderId, items, conn);
+
+            // ── Bước 4: Đánh dấu voucher đã sử dụng ─────────────────────────────────
+            if (user_coupon_id) {
+                const [markResult] = await conn.execute(
+                    `UPDATE user_coupons
+                     SET status = 'used',
+                         used_at = NOW(),
+                         used_order_id = ?
+                     WHERE id = ? AND status = 'available'`, // Double-check trước khi ghi
+                    [String(newOrderId), user_coupon_id]
+                );
+
+                if (markResult.affectedRows === 0) {
+                    // Một request khác đã kịp mark trước (không xảy ra nếu FOR UPDATE hoạt động đúng)
+                    await conn.rollback();
+                    return res.status(409).json({
+                        success: false,
+                        message: "Voucher vừa được sử dụng bởi thao tác khác. Vui lòng thử lại."
+                    });
+                }
+
+                console.log(`[voucher] userId=${orderData.user_id} coupon=${user_coupon_id} order=${newOrderId} ✅ marked as used`);
+            }
+
+            await conn.commit();
 
             res.status(201).json({
                 success: true,
@@ -124,14 +201,17 @@ const orderController = {
                 orderId: newOrderId
             });
         } catch (error) {
+            await conn.rollback();
             console.error("Lỗi tạo đơn hàng:", error);
             res.status(400).json({
                 success: false,
                 message: "Không thể tạo đơn hàng",
                 error: error.message
             });
+        } finally {
+            conn.release(); // Luôn trả connection về pool dù thành công hay thất bại
         }
     }
 };
 
-module.exports = orderController;
+module.exports = orderController;

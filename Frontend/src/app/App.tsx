@@ -37,6 +37,8 @@ import PaymentCODScreen from "./(payment)/PaymentCOD";
 import PaymentQRScreen from "./(payment)/PaymentQR";
 import ProductDetailScreen from "./(product)/ProductDetail";
 import OrderDetailScreen from "./(order)/OrderDetail";
+import AdminDashboardScreen from "./(admin)/AdminDashboard";
+import AdminUsersScreen from "./(admin)/AdminUsers";
 import {
   Home as HomeIcon,
   Compass as CompassIcon,
@@ -82,7 +84,14 @@ type ScreenKey =
   | "paymentCOD"
   | "paymentQR"
   | "productDetail"
-  | "orderDetail";
+  | "orderDetail"
+  | "adminDashboard"
+  | "adminUsers"
+  | "adminProducts"
+  | "adminOrders"
+  | "adminVouchers"
+  | "adminEvents"
+  | "adminQuests";
 
 // ==========================================
 // 🛠️ DEV CONFIG
@@ -131,9 +140,14 @@ function AppContent() {
     }
   }, [token]);
 
-  const goToMain = () => {
-    setActiveTab("home");
-    setScreen("home");
+  const goToMain = (user?: any) => {
+    if (user?.vai_tro === 'admin') {
+      setActiveTab("home"); // doesn't matter for admin, hide tabs
+      setScreen("adminDashboard");
+    } else {
+      setActiveTab("home");
+      setScreen("home");
+    }
   };
 
   const goToAuth = (screenName: "login" | "register") => setScreen(screenName);
@@ -193,7 +207,16 @@ function AppContent() {
           />
         );
       case "profile":
-        return <ProfileScreen onLogout={handleLogout} onSelectOrder={(orderId) => { setSelectedOrderId(orderId); setScreen("orderDetail"); }} />;
+        return (
+          <ProfileScreen
+            onLogout={handleLogout}
+            onSelectOrder={(orderId) => {
+              setSelectedOrderId(orderId);
+              setScreen("orderDetail");
+            }}
+            onNavigateToAdmin={() => setScreen("adminDashboard")}
+          />
+        );
       case "cart":
         return <CartScreen onBack={() => setScreen("mall")} onCheckout={() => setScreen("checkout")} />;
       case "checkout":
@@ -223,15 +246,42 @@ function AppContent() {
             onBack={() => setScreen("profile")}
           />
         );
+      case "adminDashboard":
+        return (
+          <AdminDashboardScreen
+            onNavigate={(s: string) => {
+              if (["home", "mall", "explore", "event", "profile"].includes(s)) {
+                setActiveTab(s as TabKey);
+              }
+              setScreen(s as ScreenKey);
+            }}
+            onLogout={handleLogout}
+          />
+        );
+      case "adminUsers":
+        return <AdminUsersScreen onBack={() => setScreen("adminDashboard")} />;
+      case "adminProducts":
+      case "adminOrders":
+      case "adminVouchers":
+      case "adminEvents":
+      case "adminQuests":
+        return (
+          <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+            <Text style={{ fontSize: 18, marginBottom: 20 }}>Màn hình chưa được hiện thực</Text>
+            <TouchableOpacity onPress={() => setScreen("adminDashboard")} style={{ padding: 10, backgroundColor: "#2E7D32", borderRadius: 8 }}>
+              <Text style={{ color: "#fff" }}>Quay lại Dashboard</Text>
+            </TouchableOpacity>
+          </View>
+        );
       default:
         return null;
     }
   };
 
-  const isMainScreen = ["home", "mall", "explore", "event", "profile", "cart", "checkout", "paymentCOD", "paymentQR", "productDetail", "orderDetail"].includes(screen);
+  const isMainScreen = ["home", "mall", "explore", "event", "profile", "cart", "checkout", "paymentCOD", "paymentQR", "productDetail", "orderDetail", "adminDashboard", "adminUsers", "adminProducts", "adminOrders", "adminVouchers", "adminEvents", "adminQuests"].includes(screen);
 
   // Màn hình tự quản lý scroll riêng — không cần ScrollView bọc ngoài
-  const isFullscreenScreen = ["explore", "cart", "checkout", "paymentCOD", "paymentQR", "productDetail", "orderDetail"].includes(screen);
+  const isFullscreenScreen = ["explore", "cart", "checkout", "paymentCOD", "paymentQR", "productDetail", "orderDetail", "adminDashboard", "adminUsers", "adminProducts", "adminOrders", "adminVouchers", "adminEvents", "adminQuests"].includes(screen);
 
   return (
     <SafeAreaView style={styles.container}>

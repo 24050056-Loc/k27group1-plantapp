@@ -800,7 +800,10 @@ export default function EventScreen({ onOpenExplore }: EventScreenProps) {
     }
   }, [user?.id]);
 
-  const resetDailyPlant = useCallback((seedToKeep: Seed | null = selectedSeed) => {
+  // ── Daily Reset: Chỉ dùng khi backend xác nhận sang ngày mới (was_daily_reset=true) ──
+  // KHÔNG tự mở seed picker: user tự chọn hạt giống trong ngày mới.
+  // KHÔNG lưu lại progress: backend đã tự xử lý khi getProgress được gọi.
+  const resetDailyPlant = useCallback(() => {
     const nextStartTime = Date.now();
     const nextMissions = [false, false, false, false, false];
     const nextClaimedVouchers: StageKey[] = [];
@@ -816,43 +819,19 @@ export default function EventScreen({ onOpenExplore }: EventScreenProps) {
     setMissions(nextMissions);
     setClaimedVouchers(nextClaimedVouchers);
     setRemainingMs(STAGE_BASE_DURATION_MS);
-    setSeedPickerOpen(true);
+    // Không gọi setSeedPickerOpen(true) — user chọn seed theo flow tự nhiên
     stageStartTimeRef.current = nextStartTime;
     timeReducedRef.current = 0;
+  }, []);
 
-    if (user?.id && progressLoadedRef.current && progressApiAvailableRef.current) {
-      saveProgress({
-        selectedSeed: null,
-        stage: 0,
-        stageStartTime: nextStartTime,
-        timeReduced: 0,
-        waterTurns: DEFAULT_WATER_MAX,
-        fertTurns: DEFAULT_FERT_MAX,
-        waterMax: DEFAULT_WATER_MAX,
-        fertMax: DEFAULT_FERT_MAX,
-        missions: nextMissions,
-        claimedVouchers: nextClaimedVouchers,
-        notifOn,
-        resetReason: "daily",
-      });
-    }
-  }, [selectedSeed, user?.id, notifOn, saveProgress]);
-
+  // ── Voucher Claim Reset / Trồng cây mới: CHỈ reset cây về Stage 0, GIỮ NGUYÊN nhiệm vụ & lượt chăm sóc của ngày ──
   const resetPlantForNewSeed = useCallback(() => {
     const nextStartTime = Date.now();
-    const resetMissions = [false, false, false, false, false];
-    const resetClaimed: StageKey[] = [];
 
     setSelectedSeed(null);
     setStage(0);
     setStageStartTime(nextStartTime);
     setTimeReduced(0);
-    setWaterTurns(DEFAULT_WATER_MAX);
-    setFertTurns(DEFAULT_FERT_MAX);
-    setWaterMax(DEFAULT_WATER_MAX);
-    setFertMax(DEFAULT_FERT_MAX);
-    setMissions(resetMissions);
-    setClaimedVouchers(resetClaimed);
     setRemainingMs(STAGE_BASE_DURATION_MS);
     stageStartTimeRef.current = nextStartTime;
     timeReducedRef.current = 0;
@@ -864,49 +843,40 @@ export default function EventScreen({ onOpenExplore }: EventScreenProps) {
         stage: 0,
         stageStartTime: nextStartTime,
         timeReduced: 0,
-        waterTurns: DEFAULT_WATER_MAX,
-        fertTurns: DEFAULT_FERT_MAX,
-        waterMax: DEFAULT_WATER_MAX,
-        fertMax: DEFAULT_FERT_MAX,
-        missions: resetMissions,
-        claimedVouchers: resetClaimed,
+        waterTurns, // Giữ nguyên lượt nước còn lại của ngày hôm đó
+        fertTurns,  // Giữ nguyên lượt phân còn lại của ngày hôm đó
+        waterMax,
+        fertMax,
+        missions,   // Giữ nguyên các nhiệm vụ đã làm trong ngày
+        claimedVouchers,
         notifOn,
         resetReason: "seed_reset",
       });
     }
-  }, [user?.id, notifOn, saveProgress]);
+  }, [user?.id, notifOn, saveProgress, waterTurns, fertTurns, waterMax, fertMax, missions, claimedVouchers]);
 
   useEffect(() => {
     if (!user?.id) return;
     const loadProgress = async () => {
       try {
         const response = await axiosClient.get("/api/game/progress", { params: { userId: user.id } });
+        const wasDailyReset = response.data?.was_daily_reset === true;
         const progress = response.data?.data;
+
+        if (wasDailyReset) {
+          // Backend đã xác nhận sang ngày mới theo Asia/Ho_Chi_Minh timezone.
+          // Reset UI về trạng thái đầu ngày: stage 0, không có seed, missions reset.
+          // Backend đã lưu last_daily_reset_date = today — idempotent, không reset lại.
+          resetDailyPlant();
+          setNotifOn(Boolean(progress?.notif_on));
+          progressLoadedRef.current = true;
+          return;
+        }
+
         if (progress) {
+          // Cùng ngày: khôi phục state từ backend
           const loadedSelectedSeed = SEED_DATA.find(seed => seed.id === progress.selected_seed) || null;
           const loadedStageStartTime = Number(progress.stage_start_time || Date.now());
-
-          if (shouldResetDailyPlant(loadedStageStartTime)) {
-            const resetMissions = [false, false, false, false, false];
-            const resetClaimed: StageKey[] = [];
-
-            setSelectedSeed(null);
-            setStage(0);
-            setStageStartTime(Date.now());
-            setTimeReduced(0);
-            setWaterTurns(DEFAULT_WATER_MAX);
-            setFertTurns(DEFAULT_FERT_MAX);
-            setWaterMax(DEFAULT_WATER_MAX);
-            setFertMax(DEFAULT_FERT_MAX);
-            setRemainingMs(STAGE_BASE_DURATION_MS);
-            setSeedPickerOpen(true);
-            stageStartTimeRef.current = Date.now();
-            timeReducedRef.current = 0;
-            setMissions(resetMissions);
-            setClaimedVouchers(resetClaimed);
-            setNotifOn(Boolean(progress.notif_on));
-            return;
-          }
 
           setStage(progress.stage as StageKey);
           setStageStartTime(loadedStageStartTime);
@@ -915,10 +885,12 @@ export default function EventScreen({ onOpenExplore }: EventScreenProps) {
           setFertTurns(Number(progress.fert_turns));
           setWaterMax(Number(progress.water_max));
           setFertMax(Number(progress.fert_max));
-          setMissions(progress.missions);
-          setClaimedVouchers(progress.claimed_vouchers);
+          setMissions(Array.isArray(progress.missions) ? progress.missions : [false, false, false, false, false]);
+          setClaimedVouchers(Array.isArray(progress.claimed_vouchers) ? progress.claimed_vouchers : []);
           setNotifOn(Boolean(progress.notif_on));
           setSelectedSeed(loadedSelectedSeed);
+          stageStartTimeRef.current = loadedStageStartTime;
+          timeReducedRef.current = Number(progress.time_reduced);
         }
       } catch (error) {
         if (axios.isAxiosError(error) && error.response?.status === 404) {
@@ -931,7 +903,7 @@ export default function EventScreen({ onOpenExplore }: EventScreenProps) {
       }
     };
     loadProgress();
-  }, [user?.id]);
+  }, [user?.id, resetDailyPlant]);
 
   // ── Animations ─────────────────────────────────────────────────────────────
   const breatheAnim = useRef(new Animated.Value(1)).current;
@@ -962,7 +934,7 @@ export default function EventScreen({ onOpenExplore }: EventScreenProps) {
 
   const syncStageProgress = useCallback((currentStage: StageKey, currentStageStartTime: number, currentTimeReduced: number) => {
     if (shouldResetDailyPlant(currentStageStartTime)) {
-      resetDailyPlant(selectedSeed);
+      resetDailyPlant();
       return;
     }
 
@@ -1085,21 +1057,55 @@ export default function EventScreen({ onOpenExplore }: EventScreenProps) {
     saveProgress({ selectedSeed, stage, stageStartTime, timeReduced, waterTurns: nextWaterTurns, fertTurns: nextFertTurns, waterMax: nextWaterMax, fertMax: nextFertMax, missions: nextMissions, claimedVouchers, notifOn });
   }, [missions, waterTurns, fertTurns, waterMax, fertMax, selectedSeed, stage, stageStartTime, timeReduced, claimedVouchers, notifOn, saveProgress]);
 
-  const handleExploreMission = useCallback(() => {
+  const handleExploreMission = useCallback(async () => {
     if (missions[4]) return;
-    const rewardSeed = SEED_DATA[Math.floor(Math.random() * SEED_DATA.length)];
-    const nextMissions = [...missions];
-    nextMissions[4] = true;
-    setMissions(nextMissions);
-    setUnlockedSeeds(prev => prev.some(seed => seed.id === rewardSeed.id) ? prev : [...prev, rewardSeed]);
-    setMissionOpen(false);
-    saveProgress({ selectedSeed, stage, stageStartTime, timeReduced, waterTurns, fertTurns, waterMax, fertMax, missions: nextMissions, claimedVouchers, notifOn });
-    Alert.alert(
-      "Bạn nhận được hạt giống!",
-      `${rewardSeed.emoji} ${rewardSeed.name} đã được thêm vào khu vườn.`,
-      [{ text: "Khám phá ngay", onPress: onOpenExplore }, { text: "Để sau" }]
-    );
-  }, [missions, onOpenExplore, selectedSeed, stage, stageStartTime, timeReduced, waterTurns, fertTurns, waterMax, fertMax, claimedVouchers, notifOn, saveProgress]);
+
+    try {
+      // Gọi backend để claim seed — backend kiểm tra giới hạn 1 lần/ngày (Asia/Ho_Chi_Minh)
+      const claimRes = await axiosClient.post("/api/game/claim-seed", { userId: user?.id });
+      const claimedSeed = claimRes.data?.seed;
+
+      const rewardSeed = claimedSeed
+        ? (SEED_DATA.find(s => s.id === claimedSeed.id) || SEED_DATA[Math.floor(Math.random() * SEED_DATA.length)])
+        : SEED_DATA[Math.floor(Math.random() * SEED_DATA.length)];
+
+      const nextMissions = [...missions];
+      nextMissions[4] = true;
+      setMissions(nextMissions);
+      setUnlockedSeeds(prev => prev.some(seed => seed.id === rewardSeed.id) ? prev : [...prev, rewardSeed]);
+      setMissionOpen(false);
+      saveProgress({ selectedSeed, stage, stageStartTime, timeReduced, waterTurns, fertTurns, waterMax, fertMax, missions: nextMissions, claimedVouchers, notifOn });
+
+      Alert.alert(
+        "Bạn nhận được hạt giống!",
+        `${rewardSeed.emoji} ${rewardSeed.name} đã được thêm vào khu vườn.`,
+        [{ text: "Khám phá ngay", onPress: onOpenExplore }, { text: "Để sau" }]
+      );
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 400) {
+        // Backend từ chối: đã nhận hạt giống hôm nay
+        const msg = error.response.data?.message || "Bạn đã nhận hạt giống hôm nay rồi!";
+        Alert.alert("Không thể nhận hạt giống", msg);
+      } else if (axios.isAxiosError(error) && error.response?.status === 404) {
+        // API không tồn tại (legacy) — fallback xử lý locally
+        const rewardSeed = SEED_DATA[Math.floor(Math.random() * SEED_DATA.length)];
+        const nextMissions = [...missions];
+        nextMissions[4] = true;
+        setMissions(nextMissions);
+        setUnlockedSeeds(prev => prev.some(seed => seed.id === rewardSeed.id) ? prev : [...prev, rewardSeed]);
+        setMissionOpen(false);
+        saveProgress({ selectedSeed, stage, stageStartTime, timeReduced, waterTurns, fertTurns, waterMax, fertMax, missions: nextMissions, claimedVouchers, notifOn });
+        Alert.alert(
+          "Bạn nhận được hạt giống!",
+          `${rewardSeed.emoji} ${rewardSeed.name} đã được thêm vào khu vườn.`,
+          [{ text: "Khám phá ngay", onPress: onOpenExplore }, { text: "Để sau" }]
+        );
+      } else {
+        console.error("Lỗi nhận hạt giống:", error);
+        Alert.alert("Lỗi", "Không thể nhận hạt giống lúc này. Vui lòng thử lại.");
+      }
+    }
+  }, [missions, user?.id, onOpenExplore, selectedSeed, stage, stageStartTime, timeReduced, waterTurns, fertTurns, waterMax, fertMax, claimedVouchers, notifOn, saveProgress]);
 
   const handleSelectSeed = useCallback((seed: Seed) => {
     setSelectedSeed(seed);
@@ -1216,19 +1222,20 @@ export default function EventScreen({ onOpenExplore }: EventScreenProps) {
       addVoucher(code, meta.voucher.label, meta.desc);
 
       if (stageToClaim < stage) {
+        // Voucher Claim Reset: Chỉ reset cây về Stage 0, KHÔNG reset nhiệm vụ hay lượt tưới/phân của ngày
         saveProgress({
           selectedSeed: null,
           stage: 0,
           stageStartTime: Date.now(),
           timeReduced: 0,
-          waterTurns: DEFAULT_WATER_MAX,
-          fertTurns: DEFAULT_FERT_MAX,
-          waterMax: DEFAULT_WATER_MAX,
-          fertMax: DEFAULT_FERT_MAX,
-          missions: [false, false, false, false, false],
-          claimedVouchers: [],
+          waterTurns,
+          fertTurns,
+          waterMax,
+          fertMax,
+          missions,
+          claimedVouchers: nextClaimedVouchers,
           notifOn,
-          resetReason: "legacy_voucher_reset",
+          resetReason: "voucher_claim_tree_reset",
         });
         resetPlantForNewSeed();
       } else {
@@ -1268,8 +1275,8 @@ export default function EventScreen({ onOpenExplore }: EventScreenProps) {
         return;
       }
 
-      console.error('Lỗi nhận voucher sự kiện:', error);
-      Alert.alert('Không thể nhận voucher', 'Vui lòng thử lại sau.');
+      console.error('Lỗi nhận voucher sự kiện:', error?.response?.data || error?.message || error);
+      Alert.alert('Không thể nhận voucher', error?.response?.data?.message || 'Vui lòng thử lại sau.');
     }
   }, [addVoucher, claimedVouchers, notifOn, resetPlantForNewSeed, saveProgress, selectedSeed, stage, stageStartTime, timeReduced, waterTurns, fertTurns, waterMax, fertMax, missions, user?.id]);
 

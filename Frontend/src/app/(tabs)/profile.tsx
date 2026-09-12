@@ -5,7 +5,7 @@ import {
   View, Text, StyleSheet, Image, TouchableOpacity, ScrollView, ActivityIndicator, RefreshControl, Animated, PanResponder,
   Alert, TextInput, Modal, Platform 
 } from "react-native";
-import { User as UserIcon, Settings, CreditCard, HelpCircle, LogOut, ShoppingBag, Edit2, Camera, X, LocateFixed, Trash2 } from "lucide-react-native";
+import { User as UserIcon, Settings, CreditCard, HelpCircle, LogOut, ShoppingBag, Edit2, Camera, X, LocateFixed, Trash2, ShieldCheck, ChevronRight } from "lucide-react-native";
 import * as ImagePicker from "expo-image-picker";
 import { useAuth } from "../../context/AuthContext";
 import { getUserOrders, getUserProfile, updateUserAvatar, updateUserProfile } from "../../services/userService";
@@ -15,6 +15,7 @@ import { Order, DEFAULT_SHIPPING_FEE } from "../../types";
 type Props = {
   onLogout: () => void;
   onSelectOrder?: (orderId: number) => void;
+  onNavigateToAdmin?: () => void;
 };
 
 function SwipeableCancelledOrder({
@@ -83,8 +84,9 @@ function formatDetectedAddress(place: Location.LocationGeocodedAddress | undefin
     .join(", ");
 }
 
-export default function ProfileScreen({ onLogout, onSelectOrder }: Props) {
+export default function ProfileScreen({ onLogout, onSelectOrder, onNavigateToAdmin }: Props) {
   const { user, updateUser } = useAuth();
+  const isAdmin = user?.vai_tro?.toLowerCase() === "admin";
   const [orders, setOrders] = useState<Order[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(false);
   const [isEditModalVisible, setIsEditModalVisible] = useState(false);
@@ -410,7 +412,9 @@ export default function ProfileScreen({ onLogout, onSelectOrder }: Props) {
         <View style={styles.headerInfo}>
           <Text style={styles.name}>{user?.ho_ten || user?.ten_dang_nhap || "Khách Hàng"}</Text>
           <Text style={styles.role}>{user?.email || "Chưa cập nhật email"}</Text>
-          <Text style={styles.badgeRole}>{user?.vai_tro === "admin" ? "Quản trị viên" : "Thành viên"}</Text>
+          <Text style={[styles.badgeRole, isAdmin && styles.badgeRoleAdmin]}>
+            {isAdmin ? "Quản trị viên" : "Thành viên"}
+          </Text>
         </View>
         <TouchableOpacity style={styles.editButton} onPress={openEditModal}>
           <Edit2 size={18} stroke="#2E7D32" />
@@ -437,6 +441,28 @@ export default function ProfileScreen({ onLogout, onSelectOrder }: Props) {
           {isRefreshingProfile ? "Đang cập nhật..." : "↻ Làm mới thông tin"}
         </Text>
       </TouchableOpacity>
+
+      {isAdmin && (
+        <TouchableOpacity
+          style={styles.adminCard}
+          onPress={onNavigateToAdmin}
+          activeOpacity={0.8}
+        >
+          <View style={styles.adminCardIconWrapper}>
+            <ShieldCheck size={22} color="#fff" />
+          </View>
+          <View style={styles.adminCardContent}>
+            <View style={styles.adminCardTitleRow}>
+              <Text style={styles.adminCardTitle}>Bảng điều khiển Quản trị</Text>
+              <View style={styles.adminTag}>
+                <Text style={styles.adminTagText}>ADMIN</Text>
+              </View>
+            </View>
+            <Text style={styles.adminCardSubtitle}>Chuyển đến trang quản lý hệ thống</Text>
+          </View>
+          <ChevronRight size={20} color="#2E7D32" />
+        </TouchableOpacity>
+      )}
 
       <Text style={styles.sectionTitle}>Lịch sử mua hàng</Text>
       
@@ -772,6 +798,66 @@ const styles = StyleSheet.create({
     paddingVertical: 2, 
     borderRadius: 6, 
     marginTop: 6 
+  },
+  badgeRoleAdmin: {
+    backgroundColor: "#E8F5E9",
+    borderColor: "#81C784",
+    borderWidth: 1,
+    color: "#1B5E20",
+  },
+  adminCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F1F8E9",
+    borderWidth: 1.5,
+    borderColor: "#C8E6C9",
+    borderRadius: 18,
+    padding: 14,
+    marginBottom: 20,
+    gap: 12,
+    shadowColor: "#2E7D32",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  adminCardIconWrapper: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: "#2E7D32",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  adminCardContent: {
+    flex: 1,
+  },
+  adminCardTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  adminCardTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#1B5E20",
+  },
+  adminTag: {
+    backgroundColor: "#2E7D32",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  adminTagText: {
+    color: "#ffffff",
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+  },
+  adminCardSubtitle: {
+    fontSize: 12,
+    color: "#558B2F",
+    marginTop: 2,
   },
   editButton: {
     width: 40,

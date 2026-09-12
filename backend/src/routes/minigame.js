@@ -13,6 +13,9 @@ router.get('/seeds', eventController.getSeeds);
 router.get('/progress', eventController.getProgress);
 router.put('/progress', eventController.saveProgress);
 
+// 1.1 Nhận hạt giống ngày hôm nay (giới hạn 1 lần/ngày theo VN timezone)
+router.post('/claim-seed', eventController.claimSeed);
+
 // 2. Chọn loại cây để trồng
 router.post('/choose-plant', eventController.choosePlant);
 
@@ -32,3 +35,4 @@ router.get('/missions', eventController.getMissions);
 router.post('/complete-mission', eventController.completeMission);
 
 module.exports = router;
+

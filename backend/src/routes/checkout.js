@@ -82,9 +82,9 @@ router.post('/', authenticateToken, async (req, res) => {
         // 4. Tạo hóa đơn (Orders) - Đã cập nhật khớp với Schema bảng orders mới
         // Lưu ý: tong_thanh_toan là cột GENERATED STORED nên MySQL sẽ tự tính, không cần INSERT
         const [orderResult] = await connection.execute(
-            `INSERT INTO orders (user_id, coupon_id, tong_tien_hang, so_tien_giam_gia, dia_chi_giao_hang) 
-             VALUES (?, ?, ?, ?, ?)`,
-            [userId, coupon_id, tong_tien, so_tien_giam, dia_chi_giao_hang]
+            `INSERT INTO orders (user_id, coupon_id, ma_giam_gia, tong_tien_hang, so_tien_giam_gia, dia_chi_giao_hang) 
+             VALUES (?, ?, ?, ?, ?, ?)`,
+            [userId, coupon_id, ma_giam_gia ? ma_giam_gia.trim().toUpperCase() : null, tong_tien, so_tien_giam, dia_chi_giao_hang]
         );
         const orderId = orderResult.insertId;
         const tong_thanh_toan = Math.max(0, tong_tien - so_tien_giam + SHIPPING_FEE);

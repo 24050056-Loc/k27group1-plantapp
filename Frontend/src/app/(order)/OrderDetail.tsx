@@ -10,7 +10,7 @@ import {
   ActivityIndicator,
   Platform,
 } from "react-native";
-import { ChevronLeft, Trash2, Phone, MapPin } from "lucide-react-native";
+import { ChevronLeft, Trash2, Phone, MapPin, Ticket } from "lucide-react-native";
 import { OrderDetail, calculateDisplayOrderTotal, normalizeShippingFee } from "../../types";
 import { resolveProductImageByName } from "../../assets/productImages";
 import { useAuth } from "../../context/AuthContext";
@@ -146,10 +146,12 @@ export default function OrderDetailScreen({ orderId, onBack }: Props) {
     0
   );
   const shippingFee = normalizeShippingFee(order.phi_van_chuyen);
+  const discountAmount = Number(order.so_tien_giam_gia || 0);
   const calculatedTotal = calculateDisplayOrderTotal(
     subtotal,
     shippingFee,
-    order.tong_thanh_toan
+    order.tong_thanh_toan,
+    discountAmount
   );
 
   return (
@@ -269,6 +271,26 @@ export default function OrderDetailScreen({ orderId, onBack }: Props) {
                 {subtotal.toLocaleString("vi-VN")}đ
               </Text>
             </View>
+
+            {(discountAmount > 0 || !!order.ma_giam_gia) && (
+              <>
+                <View style={styles.divider} />
+                <View style={styles.summaryRow}>
+                  <View style={styles.discountLabelContainer}>
+                    <Text style={styles.summaryLabel}>Mã giảm giá</Text>
+                    {order.ma_giam_gia ? (
+                      <View style={styles.couponBadge}>
+                        <Ticket size={12} color="#2E7D32" stroke="#2E7D32" />
+                        <Text style={styles.couponBadgeText}>{order.ma_giam_gia}</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                  <Text style={styles.discountValue}>
+                    -{discountAmount.toLocaleString("vi-VN")}đ
+                  </Text>
+                </View>
+              </>
+            )}
 
             <View style={styles.divider} />
             <View style={styles.summaryRow}>
@@ -546,6 +568,33 @@ const styles = StyleSheet.create({
   },
   summaryValueBold: {
     fontSize: 16,
+    fontWeight: "700",
+    color: "#2E7D32",
+  },
+  discountLabelContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    flexWrap: "wrap",
+  },
+  couponBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#E8F5E9",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+    gap: 4,
+    borderWidth: 1,
+    borderColor: "#C8E6C9",
+  },
+  couponBadgeText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#2E7D32",
+  },
+  discountValue: {
+    fontSize: 14,
     fontWeight: "700",
     color: "#2E7D32",
   },

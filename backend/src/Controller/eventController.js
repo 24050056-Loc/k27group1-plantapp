@@ -1,60 +1,123 @@
 const pool = require('../db.js'); // Đường dẫn tới file cấu hình kết nối MySQL pool của bạn
 
-const getDayKey = (timestamp = Date.now()) => {
-    const date = new Date(timestamp);
-    return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+// ─── Timezone & Ngày theo Việt Nam ────────────────────────────────────────────
+const VN_TIMEZONE = 'Asia/Ho_Chi_Minh';
+
+/**
+ * Trả về chuỗi ngày YYYY-MM-DD theo timezone Việt Nam (Asia/Ho_Chi_Minh).
+ * Đây là nguồn DUY NHẤT để xác định "ngày hiện tại" trong toàn bộ hệ thống.
+ * Đảm bảo Frontend và Backend thống nhất timezone — tránh reset sai giờ do UTC.
+ */
+const getVietnamDateStr = (date = new Date()) => {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: VN_TIMEZONE,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+    }).formatToParts(date);
+    const map = {};
+    parts.forEach(p => { map[p.type] = p.value; });
+    return `${map.year}-${map.month}-${map.day}`;
 };
 
-const shouldResetDailyProgress = (progress = {}) => {
-    const currentDayKey = getDayKey();
-    const lastResetDay = Number(progress.last_reset_day || 0);
-    const stageStartDayKey = getDayKey(Number(progress.stage_start_time || Date.now()));
-    return lastResetDay < currentDayKey || stageStartDayKey < currentDayKey;
+/**
+ * Chuyển đổi giá trị ngày từ MySQL (Date object hoặc chuỗi) thành YYYY-MM-DD theo VN timezone.
+ * mysql2 trả về Date object cho cột kiểu DATE, nên dùng Intl formatter để tránh lệch timezone UTC.
+ */
+const toDateStrVN = (val) => {
+    if (!val) return null;
+    if (val instanceof Date) {
+        return getVietnamDateStr(val);
+    }
+    const str = String(val).trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) {
+        return str;
+    }
+    const d = new Date(val);
+    if (!isNaN(d.getTime())) {
+        return getVietnamDateStr(d);
+    }
+    return null;
 };
 
-const resetProgressForNewDay = (progress = {}, resetReason = 'daily') => ({
-    selected_seed: progress.selected_seed || null,
-    stage: 1,
-    stage_start_time: Date.now(),
-    time_reduced: 0,
-    water_turns: 3,
-    fert_turns: 1,
-    water_max: 3,
-    fert_max: 1,
-    missions: [false, false, false, false, false],
-    claimed_vouchers: [],
-    notif_on: Boolean(progress.notif_on),
-    last_reset_day: getDayKey(),
-    reset_reason: resetReason,
-});
+/**
+ * Kiểm tra xem tiến trình của user có cần Daily Reset không.
+ * So sánh last_daily_reset_date (DATE string YYYY-MM-DD) với ngày VN hiện tại.
+ *
+ * ĐÂY LÀ ĐIỀU KIỆN DUY NHẤT để kích hoạt Daily Reset:
+ *   last_daily_reset_date != today_VN
+ *
+ * Đảm bảo idempotency: sau khi reset, cập nhật last_daily_reset_date = today
+ * → không bao giờ reset 2 lần trong cùng một ngày, dù gọi API bao nhiêu lần.
+ */
+const shouldDailyReset = (progress = {}) => {
+    const todayVN = getVietnamDateStr();
+    const lastResetDate = toDateStrVN(progress.last_daily_reset_date);
+    return lastResetDate !== todayVN;
+};
 
-const ensureProgressTable = Promise.all([
-    pool.query(`
-        CREATE TABLE IF NOT EXISTS event_progress (
-            user_id INT PRIMARY KEY,
-            selected_seed VARCHAR(100) NULL,
-            stage TINYINT NOT NULL DEFAULT 0,
-            stage_start_time BIGINT NOT NULL,
-            time_reduced BIGINT NOT NULL DEFAULT 0,
-            water_turns INT NOT NULL DEFAULT 3,
-            fert_turns INT NOT NULL DEFAULT 1,
-            water_max INT NOT NULL DEFAULT 3,
-            fert_max INT NOT NULL DEFAULT 1,
-            missions JSON NOT NULL,
-            claimed_vouchers JSON NOT NULL,
-            notif_on BOOLEAN NOT NULL DEFAULT FALSE,
-            last_reset_day BIGINT NOT NULL DEFAULT 0,
-            reset_reason VARCHAR(50) NOT NULL DEFAULT 'daily',
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-        )
-    `),
-    pool.query(`
-        ALTER TABLE event_progress
-        ADD COLUMN IF NOT EXISTS last_reset_day BIGINT NOT NULL DEFAULT 0,
-        ADD COLUMN IF NOT EXISTS reset_reason VARCHAR(50) NOT NULL DEFAULT 'daily'
-    `)
-]).catch(error => console.error('Lỗi tạo bảng event_progress:', error.message));
+/**
+ * Kiểm tra user có thể nhận seed hôm nay không.
+ * Dùng last_seed_claim_date (DATE string theo VN timezone).
+ * Giới hạn: 1 lần/ngày.
+ */
+const canClaimSeedToday = (progress = {}) => {
+    const todayVN = getVietnamDateStr();
+    const lastClaimDate = toDateStrVN(progress.last_seed_claim_date);
+    return lastClaimDate !== todayVN;
+};
 
+// ─── Giá trị mặc định mỗi ngày ────────────────────────────────────────────────
+const DEFAULT_WATER_TURNS = 3;
+const DEFAULT_FERT_TURNS = 1;
+
+// ─── Schema Migration (tự động khi khởi động) ────────────────────────────────
+const ensureProgressTable = (async () => {
+    try {
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS event_progress (
+                user_id INT PRIMARY KEY,
+                selected_seed VARCHAR(100) NULL,
+                stage TINYINT NOT NULL DEFAULT 0,
+                stage_start_time BIGINT NOT NULL DEFAULT 0,
+                time_reduced BIGINT NOT NULL DEFAULT 0,
+                water_turns INT NOT NULL DEFAULT 3,
+                fert_turns INT NOT NULL DEFAULT 1,
+                water_max INT NOT NULL DEFAULT 3,
+                fert_max INT NOT NULL DEFAULT 1,
+                missions JSON NOT NULL,
+                claimed_vouchers JSON NOT NULL,
+                notif_on BOOLEAN NOT NULL DEFAULT FALSE,
+                last_reset_day BIGINT NOT NULL DEFAULT 0,
+                reset_reason VARCHAR(50) NOT NULL DEFAULT 'daily',
+                last_daily_reset_date DATE NULL,
+                last_seed_claim_date DATE NULL,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+            )
+        `);
+
+        // Kiểm tra và bổ sung các cột còn thiếu một cách an toàn trên mọi phiên bản MySQL
+        const [existingCols] = await pool.query('SHOW COLUMNS FROM event_progress');
+        const colNames = existingCols.map(c => c.Field);
+
+        if (!colNames.includes('last_reset_day')) {
+            await pool.query('ALTER TABLE event_progress ADD COLUMN last_reset_day BIGINT NOT NULL DEFAULT 0');
+        }
+        if (!colNames.includes('reset_reason')) {
+            await pool.query("ALTER TABLE event_progress ADD COLUMN reset_reason VARCHAR(50) NOT NULL DEFAULT 'daily'");
+        }
+        if (!colNames.includes('last_daily_reset_date')) {
+            await pool.query('ALTER TABLE event_progress ADD COLUMN last_daily_reset_date DATE NULL');
+        }
+        if (!colNames.includes('last_seed_claim_date')) {
+            await pool.query('ALTER TABLE event_progress ADD COLUMN last_seed_claim_date DATE NULL');
+        }
+    } catch (error) {
+        console.error('Lỗi tạo/migrate bảng event_progress:', error.message);
+    }
+})();
+
+// ─── Seed Catalog ──────────────────────────────────────────────────────────────
 const seedCatalog = [
     { id: 'sen', name: 'Hoa Sen', category: 'Dưới nước' },
     { id: 'sung', name: 'Hoa Súng', category: 'Dưới nước' },
@@ -68,6 +131,9 @@ const seedCatalog = [
 
 const parseJsonValue = value => typeof value === 'string' ? JSON.parse(value || '[]') : (value || []);
 
+// ─────────────────────────────────────────────────────────────────────────────
+// GET /api/game/progress — Lấy tiến trình & tự động Daily Reset nếu sang ngày mới
+// ─────────────────────────────────────────────────────────────────────────────
 exports.getProgress = async (req, res) => {
     const { userId } = req.query;
     if (!userId) return res.status(400).json({ success: false, message: 'Thiếu userId' });
@@ -75,125 +141,249 @@ exports.getProgress = async (req, res) => {
     try {
         await ensureProgressTable;
         const [rows] = await pool.query('SELECT * FROM event_progress WHERE user_id = ?', [userId]);
-        if (rows.length === 0) return res.json({ success: true, data: null });
 
-        const progress = rows[0];
-        const shouldReset = shouldResetDailyProgress(progress);
-        const nextProgress = shouldReset ? resetProgressForNewDay(progress, progress.reset_reason || 'daily') : progress;
-
-        if (shouldReset) {
-            await pool.query(`
-                UPDATE event_progress
-                SET selected_seed = ?, stage = ?, stage_start_time = ?, time_reduced = ?,
-                    water_turns = ?, fert_turns = ?, water_max = ?, fert_max = ?,
-                    missions = ?, claimed_vouchers = ?, notif_on = ?, last_reset_day = ?, reset_reason = ?
-                WHERE user_id = ?
-            `, [
-                nextProgress.selected_seed,
-                nextProgress.stage,
-                nextProgress.stage_start_time,
-                nextProgress.time_reduced,
-                nextProgress.water_turns,
-                nextProgress.fert_turns,
-                nextProgress.water_max,
-                nextProgress.fert_max,
-                JSON.stringify(nextProgress.missions),
-                JSON.stringify(nextProgress.claimed_vouchers),
-                Boolean(nextProgress.notif_on),
-                nextProgress.last_reset_day,
-                nextProgress.reset_reason || 'daily',
-                userId,
-            ]);
+        if (rows.length === 0) {
+            return res.json({ success: true, data: null, was_daily_reset: false });
         }
 
-        const returnedProgress = { ...nextProgress, missions: parseJsonValue(nextProgress.missions), claimed_vouchers: parseJsonValue(nextProgress.claimed_vouchers) };
-        const responseResetReason = returnedProgress.reset_reason || 'daily';
-        console.log('[event_progress]', { userId, shouldReset, reset_reason: responseResetReason });
-        res.json({ success: true, data: returnedProgress, reset_reason: responseResetReason });
+        const progress = rows[0];
+        const needsDailyReset = shouldDailyReset(progress);
+
+        if (needsDailyReset) {
+            // ── DAILY RESET ──────────────────────────────────────────────────
+            // Kích hoạt khi last_daily_reset_date != ngày VN hiện tại.
+            //
+            // Reset TOÀN BỘ tiến độ ngày:
+            //   • stage = 0 (chưa có cây, hasSeed = false)
+            //   • selected_seed = null
+            //   • missions = [false × 5]
+            //   • water_turns = 3 (về mặc định, không cộng dồn từ ngày trước)
+            //   • fert_turns = 1 (về mặc định)
+            //   • claimed_vouchers = [] (cycle mới)
+            //
+            // KHÔNG reset: notif_on, last_seed_claim_date
+            // Cập nhật: last_daily_reset_date = today_VN (đảm bảo chỉ reset 1 lần/ngày)
+            const todayVN = getVietnamDateStr();
+            const nowTs = Date.now();
+
+            await pool.query(`
+                UPDATE event_progress
+                SET selected_seed = NULL,
+                    stage = 0,
+                    stage_start_time = ?,
+                    time_reduced = 0,
+                    water_turns = ?,
+                    fert_turns = ?,
+                    water_max = ?,
+                    fert_max = ?,
+                    missions = ?,
+                    claimed_vouchers = '[]',
+                    last_daily_reset_date = ?,
+                    reset_reason = 'daily'
+                WHERE user_id = ?
+            `, [
+                nowTs,
+                DEFAULT_WATER_TURNS,
+                DEFAULT_FERT_TURNS,
+                DEFAULT_WATER_TURNS,
+                DEFAULT_FERT_TURNS,
+                JSON.stringify([false, false, false, false, false]),
+                todayVN,
+                userId,
+            ]);
+
+            console.log(`[daily_reset] userId=${userId} ngày=${todayVN} (Asia/Ho_Chi_Minh) ✅`);
+
+            return res.json({
+                success: true,
+                was_daily_reset: true, // Flag để frontend biết đã reset ngày mới
+                data: {
+                    selected_seed: null,
+                    stage: 0,
+                    stage_start_time: nowTs,
+                    time_reduced: 0,
+                    water_turns: DEFAULT_WATER_TURNS,
+                    fert_turns: DEFAULT_FERT_TURNS,
+                    water_max: DEFAULT_WATER_TURNS,
+                    fert_max: DEFAULT_FERT_TURNS,
+                    missions: [false, false, false, false, false],
+                    claimed_vouchers: [],
+                    notif_on: Boolean(progress.notif_on),
+                    last_daily_reset_date: todayVN,
+                    last_seed_claim_date: toDateStrVN(progress.last_seed_claim_date),
+                    reset_reason: 'daily',
+                },
+            });
+        }
+
+        // ── CÙNG NGÀY: Trả về state hiện tại (không thay đổi gì) ─────────────
+        const returnedProgress = {
+            ...progress,
+            missions: parseJsonValue(progress.missions),
+            claimed_vouchers: parseJsonValue(progress.claimed_vouchers),
+            last_daily_reset_date: toDateStrVN(progress.last_daily_reset_date),
+            last_seed_claim_date: toDateStrVN(progress.last_seed_claim_date),
+        };
+
+        console.log(`[get_progress] userId=${userId} same_day=true stage=${progress.stage}`);
+        return res.json({
+            success: true,
+            was_daily_reset: false,
+            data: returnedProgress,
+        });
+
     } catch (error) {
+        console.error('[getProgress] Lỗi:', error.message);
         res.status(500).json({ success: false, error: error.message });
     }
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// PUT /api/game/progress — Lưu tiến trình (frontend gọi khi thay đổi state)
+//
+// Lưu ý quan trọng:
+//   • Endpoint này CHỈ lưu state, KHÔNG tự reset theo ngày.
+//   • last_daily_reset_date được cập nhật bởi getProgress (khi phát hiện ngày mới).
+//   • Đây là thiết kế có chủ ý để tránh race condition và đảm bảo idempotency.
+// ─────────────────────────────────────────────────────────────────────────────
 exports.saveProgress = async (req, res) => {
     const { userId } = req.body;
     const {
         selectedSeed, stage, stageStartTime, timeReduced, waterTurns, fertTurns,
         waterMax, fertMax, missions, claimedVouchers, notifOn, resetReason
     } = req.body;
+
     if (!userId || !Array.isArray(missions) || !Array.isArray(claimedVouchers)) {
         return res.status(400).json({ success: false, message: 'Dữ liệu tiến trình không hợp lệ' });
     }
 
     try {
         await ensureProgressTable;
-        const [existingRows] = await pool.query('SELECT * FROM event_progress WHERE user_id = ?', [userId]);
-        const currentProgress = existingRows[0] || {};
-        const resetRequired = shouldResetDailyProgress(currentProgress);
-        const nextProgress = resetRequired
-            ? resetProgressForNewDay({
-                ...currentProgress,
-                selected_seed: selectedSeed || currentProgress.selected_seed || null,
-                stage: stage ?? 1,
-                stage_start_time: stageStartTime || Date.now(),
-                time_reduced: timeReduced || 0,
-                water_turns: waterTurns ?? 3,
-                fert_turns: fertTurns ?? 1,
-                water_max: waterMax ?? 3,
-                fert_max: fertMax ?? 1,
-                missions,
-                claimed_vouchers: claimedVouchers,
-                notif_on: Boolean(notifOn),
-                reset_reason: resetReason || 'daily',
-            }, resetReason || 'daily')
-            : {
-                selected_seed: selectedSeed || currentProgress.selected_seed || null,
-                stage: stage ?? currentProgress.stage ?? 0,
-                stage_start_time: stageStartTime || currentProgress.stage_start_time || Date.now(),
-                time_reduced: timeReduced || currentProgress.time_reduced || 0,
-                water_turns: waterTurns ?? currentProgress.water_turns ?? 3,
-                fert_turns: fertTurns ?? currentProgress.fert_turns ?? 1,
-                water_max: waterMax ?? currentProgress.water_max ?? 3,
-                fert_max: fertMax ?? currentProgress.fert_max ?? 1,
-                missions,
-                claimed_vouchers: claimedVouchers,
-                notif_on: Boolean(notifOn),
-                last_reset_day: getDayKey(),
-                reset_reason: resetReason || currentProgress.reset_reason || 'daily',
-            };
+
+        // Lấy last_daily_reset_date hiện tại để giữ nguyên (saveProgress không được ghi đè)
+        const [existingRows] = await pool.query(
+            'SELECT last_daily_reset_date, last_seed_claim_date FROM event_progress WHERE user_id = ?',
+            [userId]
+        );
+        const existing = existingRows[0] || {};
+        const currentLastResetDate = toDateStrVN(existing.last_daily_reset_date) || getVietnamDateStr();
 
         await pool.query(`
             INSERT INTO event_progress
                 (user_id, selected_seed, stage, stage_start_time, time_reduced, water_turns, fert_turns,
-                 water_max, fert_max, missions, claimed_vouchers, notif_on, last_reset_day, reset_reason)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 water_max, fert_max, missions, claimed_vouchers, notif_on,
+                 last_reset_day, reset_reason, last_daily_reset_date)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
             ON DUPLICATE KEY UPDATE
-                selected_seed = VALUES(selected_seed), stage = VALUES(stage),
-                stage_start_time = VALUES(stage_start_time), time_reduced = VALUES(time_reduced),
-                water_turns = VALUES(water_turns), fert_turns = VALUES(fert_turns),
-                water_max = VALUES(water_max), fert_max = VALUES(fert_max),
-                missions = VALUES(missions), claimed_vouchers = VALUES(claimed_vouchers),
-                notif_on = VALUES(notif_on), last_reset_day = VALUES(last_reset_day), reset_reason = VALUES(reset_reason)
+                selected_seed = VALUES(selected_seed),
+                stage = VALUES(stage),
+                stage_start_time = VALUES(stage_start_time),
+                time_reduced = VALUES(time_reduced),
+                water_turns = VALUES(water_turns),
+                fert_turns = VALUES(fert_turns),
+                water_max = VALUES(water_max),
+                fert_max = VALUES(fert_max),
+                missions = VALUES(missions),
+                claimed_vouchers = VALUES(claimed_vouchers),
+                notif_on = VALUES(notif_on),
+                reset_reason = VALUES(reset_reason)
+                -- last_daily_reset_date KHÔNG được cập nhật ở đây
         `, [
             userId,
-            nextProgress.selected_seed || null,
-            nextProgress.stage ?? 0,
-            nextProgress.stage_start_time || Date.now(),
-            nextProgress.time_reduced || 0,
-            nextProgress.water_turns ?? 3,
-            nextProgress.fert_turns ?? 1,
-            nextProgress.water_max ?? 3,
-            nextProgress.fert_max ?? 1,
-            JSON.stringify(nextProgress.missions),
-            JSON.stringify(nextProgress.claimed_vouchers),
-            Boolean(nextProgress.notif_on),
-            nextProgress.last_reset_day || getDayKey(),
-            nextProgress.reset_reason || 'daily',
+            selectedSeed || null,
+            stage ?? 0,
+            stageStartTime || Date.now(),
+            timeReduced || 0,
+            waterTurns ?? DEFAULT_WATER_TURNS,
+            fertTurns ?? DEFAULT_FERT_TURNS,
+            waterMax ?? DEFAULT_WATER_TURNS,
+            fertMax ?? DEFAULT_FERT_TURNS,
+            JSON.stringify(missions),
+            JSON.stringify(claimedVouchers),
+            Boolean(notifOn),
+            resetReason || 'manual',
+            currentLastResetDate,
         ]);
-        const responseResetReason = nextProgress.reset_reason || 'daily';
-        console.log('[event_progress_save]', { userId, reset_reason: responseResetReason, stage: nextProgress.stage });
-        res.json({ success: true, message: 'Đã lưu tiến trình sự kiện', reset_reason: responseResetReason });
+
+        console.log(`[save_progress] userId=${userId} stage=${stage} reason=${resetReason || 'manual'}`);
+        res.json({ success: true, message: 'Đã lưu tiến trình sự kiện' });
     } catch (error) {
+        console.error('[saveProgress] Lỗi:', error.message);
+        res.status(500).json({ success: false, error: error.message });
+    }
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// POST /api/game/claim-seed — Nhận hạt giống ngày hôm nay
+//
+// Quy tắc:
+//   • Giới hạn 1 lần/ngày theo Asia/Ho_Chi_Minh timezone.
+//   • Kiểm tra last_seed_claim_date (DATE) so với today_VN.
+//   • Nếu cùng ngày → từ chối.
+//   • Nếu khác ngày → cho phép, cập nhật last_seed_claim_date = today_VN.
+// ─────────────────────────────────────────────────────────────────────────────
+exports.claimSeed = async (req, res) => {
+    const { userId } = req.body;
+    if (!userId) return res.status(400).json({ success: false, message: 'Thiếu userId' });
+
+    try {
+        await ensureProgressTable;
+        const [rows] = await pool.query(
+            'SELECT last_seed_claim_date FROM event_progress WHERE user_id = ?',
+            [userId]
+        );
+
+        const todayVN = getVietnamDateStr();
+
+        if (rows.length > 0) {
+            const lastClaimDate = toDateStrVN(rows[0].last_seed_claim_date);
+
+            if (lastClaimDate === todayVN) {
+                return res.status(400).json({
+                    success: false,
+                    already_claimed: true,
+                    message: 'Bạn đã nhận hạt giống hôm nay rồi. Hãy quay lại vào ngày mai!',
+                    last_seed_claim_date: lastClaimDate,
+                    can_claim_again: false,
+                });
+            }
+
+            // Cập nhật last_seed_claim_date = hôm nay VN
+            await pool.query(
+                'UPDATE event_progress SET last_seed_claim_date = ? WHERE user_id = ?',
+                [todayVN, userId]
+            );
+        } else {
+            // User chưa có record event_progress, tạo mới
+            await pool.query(`
+                INSERT INTO event_progress
+                    (user_id, selected_seed, stage, stage_start_time, time_reduced,
+                     water_turns, fert_turns, water_max, fert_max,
+                     missions, claimed_vouchers, notif_on,
+                     last_reset_day, reset_reason, last_daily_reset_date, last_seed_claim_date)
+                VALUES (?, NULL, 0, ?, 0, ?, ?, ?, ?, ?, '[]', FALSE, 0, 'daily', ?, ?)
+            `, [
+                userId, Date.now(),
+                DEFAULT_WATER_TURNS, DEFAULT_FERT_TURNS,
+                DEFAULT_WATER_TURNS, DEFAULT_FERT_TURNS,
+                JSON.stringify([false, false, false, false, false]),
+                todayVN, todayVN,
+            ]);
+        }
+
+        // Cấp phát hạt giống ngẫu nhiên từ catalog
+        const randomSeed = seedCatalog[Math.floor(Math.random() * seedCatalog.length)];
+
+        console.log(`[claim_seed] userId=${userId} seed=${randomSeed.id} ngày=${todayVN} (VN) ✅`);
+
+        res.json({
+            success: true,
+            message: `Bạn đã nhận được hạt giống ${randomSeed.name}!`,
+            seed: randomSeed,
+            last_seed_claim_date: todayVN,
+        });
+    } catch (error) {
+        console.error('[claimSeed] Lỗi:', error.message);
         res.status(500).json({ success: false, error: error.message });
     }
 };

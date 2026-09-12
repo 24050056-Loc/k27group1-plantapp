@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '.env'), override: true });
 
 const app = express();
 const PORT = process.env.PORT || 8080;
@@ -38,6 +39,11 @@ const adminproductsRoutes = require('./src/routes/adminproducts');
 const adminorderRoutes = require('./src/routes/adminorder');
 const adminusersRoutes = require('./src/routes/adminusers');
 
+// Các route Admin (Read-Only)
+const adminDashboardRoutes = require('./src/routes/admin/dashboard');
+const adminReadOnlyRoutes = require('./src/routes/admin/readOnly');
+const adminEventStatsRoutes = require('./src/routes/admin/eventStats');
+
 // ==========================================
 // 2. SỬ DỤNG CÁC ROUTES (Đã gom cụm)
 // ==========================================
@@ -72,6 +78,11 @@ app.use('/admin', adminRoutes);
 app.use('/adminproducts', adminproductsRoutes);
 app.use('/adminorder', adminorderRoutes);
 app.use('/adminusers', adminusersRoutes);
+
+// Cụm Route Admin (Read-Only API)
+app.use('/api/admin_dashboard', adminDashboardRoutes);
+app.use('/api/admin', adminReadOnlyRoutes);
+app.use('/api/admin', adminEventStatsRoutes);
 
 // ==========================================
 // 3. KHỞI CHẠY SERVER
