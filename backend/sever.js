@@ -39,10 +39,8 @@ const adminproductsRoutes = require('./src/routes/adminproducts');
 const adminorderRoutes = require('./src/routes/adminorder');
 const adminusersRoutes = require('./src/routes/adminusers');
 
-// Các route Admin (Read-Only)
-const adminDashboardRoutes = require('./src/routes/admin/dashboard');
-const adminReadOnlyRoutes = require('./src/routes/admin/readOnly');
-const adminEventStatsRoutes = require('./src/routes/admin/eventStats');
+// Hệ thống Admin API Toàn diện (Full CRUD, Bảo mật Token & Quyền Admin)
+const adminApiRoutes = require('./src/routes/admin/adminApi');
 
 // ==========================================
 // 2. SỬ DỤNG CÁC ROUTES (Đã gom cụm)
@@ -73,16 +71,15 @@ app.use('/api/explore', exploreRoutes);
 app.use('/reviews', exploreRoutes);
 app.use('/api/reviews', exploreRoutes);
 
-// Cụm Route Admin
+// Cụm Route Admin API Chuẩn (Bảo mật JWT + isAdmin, Full CRUD)
+app.use('/api/admin', adminApiRoutes);
+app.use('/api/admin_dashboard', adminApiRoutes);
+
+// Legacy Admin Routes (để tương thích ngược)
 app.use('/admin', adminRoutes);
 app.use('/adminproducts', adminproductsRoutes);
 app.use('/adminorder', adminorderRoutes);
 app.use('/adminusers', adminusersRoutes);
-
-// Cụm Route Admin (Read-Only API)
-app.use('/api/admin_dashboard', adminDashboardRoutes);
-app.use('/api/admin', adminReadOnlyRoutes);
-app.use('/api/admin', adminEventStatsRoutes);
 
 // ==========================================
 // 3. KHỞI CHẠY SERVER

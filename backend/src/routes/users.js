@@ -41,18 +41,96 @@ router.put('/toggle-status/:id', async (req, res) => {
     }
 });
 
+// Admin Thêm người dùng mới
+router.post('/admin/add', async (req, res) => {
+    const bcrypt = require('bcryptjs');
+    const { ten_dang_nhap, mat_khau, email, ho_ten, so_dien_thoai, dia_chi, vai_tro, dang_hoat_dong } = req.body;
+    try {
+        if (!ten_dang_nhap || !mat_khau || !email) {
+            return res.status(400).json({ success: false, message: "Vui lòng nhập đủ: Tên đăng nhập, Mật khẩu, Email" });
+        }
+        const hashedPassword = await bcrypt.hash(mat_khau, 10);
+        const role = vai_tro || 'khach_hang';
+        const active = dang_hoat_dong === false || dang_hoat_dong === 0 ? 0 : 1;
+        const sql = `INSERT INTO users (ten_dang_nhap, mat_khau, email, ho_ten, so_dien_thoai, dia_chi, vai_tro, dang_hoat_dong) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`;
+        const [result] = await pool.execute(sql, [ten_dang_nhap, hashedPassword, email, ho_ten || null, so_dien_thoai || null, dia_chi || null, role, active]);
+        res.status(201).json({ success: true, id: result.insertId, message: "Thêm người dùng thành công" });
+    } catch (error) {
+        if (error.code === 'ER_DUP_ENTRY') return res.status(400).json({ success: false, message: "Tên đăng nhập hoặc Email đã tồn tại" });
+        res.status(500).json({ success: false, message: "Lỗi: " + error.message });
+    }
+});
+
+// Admin Cập nhật người dùng
+router.put('/admin/edit/:id', async (req, res) => {
+    const bcrypt = require('bcryptjs');
+    const { id } = req.params;
+    const { ho_ten, email, so_dien_thoai, dia_chi, vai_tro, dang_hoat_dong, mat_khau } = req.body;
+    try {
+        const active = dang_hoat_dong === false || dang_hoat_dong === 0 ? 0 : 1;
+        if (mat_khau && mat_khau.trim().length > 0) {
+            const hashedPassword = await bcrypt.hash(mat_khau.trim(), 10);
+            await pool.execute('UPDATE users SET ho_ten=?, email=?, so_dien_thoai=?, dia_chi=?, vai_tro=?, dang_hoat_dong=?, mat_khau=? WHERE id=?',
+                [ho_ten || null, email || null, so_dien_thoai || null, dia_chi || null, vai_tro || 'khach_hang', active, hashedPassword, id]);
+        } else {
+            await pool.execute('UPDATE users SET ho_ten=?, email=?, so_dien_thoai=?, dia_chi=?, vai_tro=?, dang_hoat_dong=? WHERE id=?',
+                [ho_ten || null, email || null, so_dien_thoai || null, dia_chi || null, vai_tro || 'khach_hang', active, id]);
+        }
+        res.json({ success: true, message: "Cập nhật người dùng thành công" });
+    } catch (error) {
+        res.status(500).json({ success: false, message: "Lỗi: " + error.message });
+    }
+});
+
 // Xóa người dùng
 router.delete('/:id', async (req, res) => {
     try {
+        if (req.params.id == 1) {
+            return res.status(400).json({ success: false, message: "Không thể xóa tài khoản Admin gốc" });
+        }
         await pool.execute("DELETE FROM users WHERE id = ?", [req.params.id]);
         res.json({ success: true, message: "Xóa người dùng thành công" });
     } catch (error) {
-        res.status(500).json({ message: "Lỗi khi xóa", error: error.message });
+        res.status(500).json({ success: false, message: "Lỗi khi xóa", error: error.message });
     }
 });
 
 // ==========================================
-// 3. API NGƯỜI DÙNG (PROFILE & LỊCH SỬ)
+// HEARTBEAT — Cập nhật last_seen từ JWT (KHÔNG dùng body.userId)
+// POST /api/users/heartbeat — Yêu cầu Bearer Token hợp lệ
+// ==========================================
+router.post('/heartbeat', authenticateToken, async (req, res) => {
+    try {
+        const userId = req.user?.id;
+        if (!userId) {
+            return res.status(401).json({ success: false, message: "Không xác định được người dùng từ token!" });
+        }
+
+        // Kiểm tra tài khoản vẫn còn hoạt động (chưa bị khóa)
+        const [[user]] = await pool.execute(
+            'SELECT id, dang_hoat_dong FROM users WHERE id = ?',
+            [userId]
+        );
+
+        if (!user) {
+            return res.status(404).json({ success: false, message: "Tài khoản không tồn tại!" });
+        }
+
+        if (!user.dang_hoat_dong) {
+            return res.status(403).json({ success: false, message: "Tài khoản đã bị khóa!", locked: true });
+        }
+
+        // Cập nhật last_seen = NOW() từ thời gian server
+        await pool.execute('UPDATE users SET last_seen = NOW() WHERE id = ?', [userId]);
+
+        res.json({ success: true });
+    } catch (error) {
+        console.error("Lỗi heartbeat:", error.message);
+        res.status(500).json({ success: false, message: "Lỗi server" });
+    }
+});
+
+
 // ==========================================
 
 // Lấy thông tin cá nhân của 1 người dùng cụ thể

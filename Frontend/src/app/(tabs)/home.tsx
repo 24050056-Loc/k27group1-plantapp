@@ -13,7 +13,7 @@ import {
   NativeScrollEvent,
   Alert,
 } from "react-native";
-import { Bell, Search, SlidersHorizontal, Plus, Sparkles } from "lucide-react-native";
+import { Bell, Search, SlidersHorizontal, Plus, Sparkles, RotateCcw } from "lucide-react-native";
 import { getFeaturedProducts } from "../../services/productService";
 import { getCategories } from "../../services/categoryService";
 import { Product, Category } from "../../types";
@@ -224,6 +224,21 @@ export default function HomeScreen({ onSelectProduct, onSelectCategory }: Props)
     if (lower.includes("hoa")) return "🌸";
     return "🍃";
   };
+  const reloadData = async () => {
+    try {
+      setLoading(true);
+      const [prodList, catList] = await Promise.all([
+        getFeaturedProducts(),
+        getCategories(),
+      ]);
+      setProducts(prodList);
+      setCategories(catList);
+    } catch (err) {
+      console.error("Lỗi khi tải dữ liệu trang chủ:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -233,9 +248,14 @@ export default function HomeScreen({ onSelectProduct, onSelectCategory }: Props)
           <Text style={styles.greeting}>Good morning</Text>
           <Text style={styles.title}>Plantify 🌿</Text>
         </View>
-        <TouchableOpacity style={styles.iconButton}>
-          <Bell size={20} stroke="#1A2E1A" />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <TouchableOpacity style={styles.iconButton} onPress={reloadData}>
+            <RotateCcw size={18} stroke="#1A2E1A" />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.iconButton}>
+            <Bell size={20} stroke="#1A2E1A" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Search */}

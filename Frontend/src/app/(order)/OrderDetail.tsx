@@ -46,17 +46,19 @@ export default function OrderDetailScreen({ orderId, onBack }: Props) {
 
   const canCancelOrder = () => {
     if (!order) return false;
-    return ["cho_duyet", "dang_xu_ly"].includes(order.trang_thai);
+    return ["cho_duyet", "dang_xu_ly", "cho_xu_ly"].includes(order.trang_thai);
   };
 
   const getStatusColor = (status: string) => {
     switch (status) {
       case "cho_duyet":
+      case "cho_xu_ly":
         return "#f57c00";
       case "dang_xu_ly":
       case "dang_giao":
         return "#0288d1";
       case "da_giao":
+      case "hoan_thanh":
       case "da_thu/da_xu_ly":
         return "#2e7d32";
       case "da_huy":
@@ -70,12 +72,16 @@ export default function OrderDetailScreen({ orderId, onBack }: Props) {
     switch (status) {
       case "cho_duyet":
         return "Chờ duyệt";
+      case "cho_xu_ly":
+        return "Chờ xử lý";
       case "dang_xu_ly":
         return "Đang xử lý";
       case "dang_giao":
         return "Đang giao";
       case "da_giao":
         return "Đã giao";
+      case "hoan_thanh":
+        return "Hoàn thành";
       case "da_huy":
         return "Đã hủy";
       case "da_thu/da_xu_ly":

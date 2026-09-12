@@ -1,10 +1,16 @@
 const pool = require('../db'); // Giả sử bạn đã cấu hình file db.js để kết nối MySQL
 
 const productController = {
-    // 1. API CHO TRANG SẢN PHẨM (Lấy TẤT CẢ cây)
+    // 1. API CHO TRANG SẢN PHẨM (Khách hàng — CHỈ lấy sản phẩm đang kinh doanh)
     getAllProducts: async (req, res) => {
         try {
-            const query = `SELECT * FROM products ORDER BY gia_tien DESC`;
+            const query = `
+                SELECT p.*, c.ten_danh_muc as category_name 
+                FROM products p 
+                LEFT JOIN categories c ON p.category_id = c.id 
+                WHERE p.dang_kinh_doanh = 1 
+                ORDER BY p.id DESC
+            `;
             const [rows] = await pool.execute(query);
             res.json(rows);
         } catch (error) {
@@ -13,10 +19,17 @@ const productController = {
         }
     },
 
-    // 2. API CHO TRANG CHỦ (Chỉ lấy Top 6 cây)
+    // 2. API CHO TRANG CHỦ (Khách hàng — CHỈ lấy Top 6 sản phẩm đang kinh doanh)
     getFeaturedProducts: async (req, res) => {
         try {
-            const query = `SELECT * FROM products ORDER BY gia_tien DESC LIMIT 6`;
+            const query = `
+                SELECT p.*, c.ten_danh_muc as category_name 
+                FROM products p 
+                LEFT JOIN categories c ON p.category_id = c.id 
+                WHERE p.dang_kinh_doanh = 1 
+                ORDER BY p.gia_tien DESC 
+                LIMIT 6
+            `;
             const [rows] = await pool.execute(query);
             res.json(rows);
         } catch (error) {

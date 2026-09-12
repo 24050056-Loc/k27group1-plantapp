@@ -45,13 +45,27 @@ router.post('/login', async (req, res) => {
         const [rows] = await pool.execute('SELECT * FROM users WHERE ten_dang_nhap = ?', [username]);
         const user = rows[0];
 
-        if (!user || !(await bcrypt.compare(password, user.mat_khau))) {
+        if (!user) {
             return res.status(401).json({ message: "Tài khoản hoặc mật khẩu không đúng!" });
         }
 
+        // Kiểm tra mật khẩu
+        const isMatch = await bcrypt.compare(password, user.mat_khau);
+        if (!isMatch) {
+            return res.status(401).json({ message: "Tài khoản hoặc mật khẩu không đúng!" });
+        }
+
+        // Kiểm tra tài khoản bị khóa
+        if (!user.dang_hoat_dong) {
+            return res.status(403).json({ message: "Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quản trị viên!" });
+        }
+
+        // Cập nhật last_seen = NOW() khi đăng nhập thành công
+        await pool.execute('UPDATE users SET last_seen = NOW() WHERE id = ?', [user.id]);
+
         // Tạo JWT Token
         const token = jwt.sign(
-            { id: user.id, role: user.vai_tro },
+            { id: user.id, vai_tro: user.vai_tro, role: user.vai_tro },
             SECRET_KEY,
             { expiresIn: '24h' }
         );

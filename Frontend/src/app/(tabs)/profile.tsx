@@ -129,11 +129,13 @@ export default function ProfileScreen({ onLogout, onSelectOrder, onNavigateToAdm
   const getStatusColor = (status: string) => {
     switch (status) {
       case "cho_duyet":
+      case "cho_xu_ly":
         return "#f57c00"; // Cam
       case "dang_xu_ly":
       case "dang_giao":
         return "#0288d1"; // Xanh dương
       case "da_giao":
+      case "hoan_thanh":
       case "da_thu/da_xu_ly":
       case "da_thu/da_xac_nhan":
         return "#2e7d32"; // Xanh lá
@@ -147,9 +149,11 @@ export default function ProfileScreen({ onLogout, onSelectOrder, onNavigateToAdm
   const getStatusName = (status: string) => {
     switch (status) {
       case "cho_duyet": return "Chờ duyệt";
+      case "cho_xu_ly": return "Chờ xử lý";
       case "dang_xu_ly": return "Đang xử lý";
       case "dang_giao": return "Đang giao";
       case "da_giao": return "Đã giao";
+      case "hoan_thanh": return "Hoàn thành";
       case "da_huy": return "Đã hủy";
       case "da_thu/da_xu_ly": return "Đã thu/Đang xử lý";
       case "da_thu/da_xac_nhan": return "Đã thanh toán";

@@ -12,27 +12,24 @@ const startCronJobs = () => {
         try {
             // Logic kiểm tra cây đã hết thời gian chờ tưới
             // Giả sử bảng user_plants có cột 'last_watered_at' và 'watering_interval_hours' (thời gian chờ tính bằng giờ)
+            // Kiểm tra người dùng có bật thông báo nhắc nhở chăm sóc cây ảo (notif_on = 1)
             const sqlCheck = `
-                SELECT id, user_id, plant_name 
-                FROM user_plants 
-                WHERE last_watered_at IS NOT NULL 
-                  AND NOW() >= DATE_ADD(last_watered_at, INTERVAL watering_interval_hours HOUR)
+                SELECT ep.user_id, ep.stage, ep.water_turns, u.ho_ten, u.email
+                FROM event_progress ep
+                LEFT JOIN users u ON ep.user_id = u.id
+                WHERE ep.notif_on = 1 AND ep.selected_seed IS NOT NULL
             `;
-            const [plantsNeedWater] = await pool.execute(sqlCheck);
+            const [usersNeedWater] = await pool.execute(sqlCheck);
 
-            if (plantsNeedWater.length > 0) {
-                plantsNeedWater.forEach(plant => {
-                    // Liên kết với hệ thống gửi thông báo (Push Notification, Email, v.v.)
-                    // Gửi nhắc nhở cho user_id
-                    console.log(`🔔 [THÔNG BÁO] Gửi thông báo đến User ID ${plant.user_id}: "Cây ${plant.plant_name} của bạn đã đến giờ tưới nước để nhận voucher!"`);
-
-                    // TODO: Gọi hàm gửi thông báo thực tế ở đây, ví dụ sendPushNotification(plant.user_id, message)
+            if (usersNeedWater.length > 0) {
+                usersNeedWater.forEach(user => {
+                    console.log(`🔔 [THÔNG BÁO] Nhắc nhở User ID ${user.user_id} (${user.ho_ten || 'Khách'}): "Cây ảo giai đoạn ${user.stage} cần được chăm sóc để nhận voucher!"`);
                 });
             } else {
                 console.log('✅ [CRONJOB] Không có cây nào cần tưới lúc này.');
             }
         } catch (error) {
-            console.error('❌ [CRONJOB] Lỗi khi kiểm tra lịch tưới cây:', error);
+            console.error('❌ [CRONJOB] Lỗi khi kiểm tra lịch tưới cây:', error.message);
         }
     });
 };

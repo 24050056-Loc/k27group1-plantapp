@@ -39,6 +39,12 @@ import ProductDetailScreen from "./(product)/ProductDetail";
 import OrderDetailScreen from "./(order)/OrderDetail";
 import AdminDashboardScreen from "./(admin)/AdminDashboard";
 import AdminUsersScreen from "./(admin)/AdminUsers";
+import AdminProductsScreen from "./(admin)/AdminProducts";
+import AdminOrdersScreen from "./(admin)/AdminOrders";
+import AdminEventsScreen from "./(admin)/AdminEvents";
+import AdminQuestsScreen from "./(admin)/AdminQuests";
+import AdminCategoriesScreen from "./(admin)/AdminCategories";
+import AdminVouchersScreen from "./(admin)/AdminVouchers";
 import {
   Home as HomeIcon,
   Compass as CompassIcon,
@@ -89,6 +95,7 @@ type ScreenKey =
   | "adminUsers"
   | "adminProducts"
   | "adminOrders"
+  | "adminCategories"
   | "adminVouchers"
   | "adminEvents"
   | "adminQuests";
@@ -261,27 +268,26 @@ function AppContent() {
       case "adminUsers":
         return <AdminUsersScreen onBack={() => setScreen("adminDashboard")} />;
       case "adminProducts":
+        return <AdminProductsScreen onBack={() => setScreen("adminDashboard")} />;
       case "adminOrders":
-      case "adminVouchers":
+        return <AdminOrdersScreen onBack={() => setScreen("adminDashboard")} />;
       case "adminEvents":
+        return <AdminEventsScreen onBack={() => setScreen("adminDashboard")} />;
       case "adminQuests":
-        return (
-          <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
-            <Text style={{ fontSize: 18, marginBottom: 20 }}>Màn hình chưa được hiện thực</Text>
-            <TouchableOpacity onPress={() => setScreen("adminDashboard")} style={{ padding: 10, backgroundColor: "#2E7D32", borderRadius: 8 }}>
-              <Text style={{ color: "#fff" }}>Quay lại Dashboard</Text>
-            </TouchableOpacity>
-          </View>
-        );
+        return <AdminQuestsScreen onBack={() => setScreen("adminDashboard")} />;
+      case "adminCategories":
+        return <AdminCategoriesScreen onBack={() => setScreen("adminDashboard")} />;
+      case "adminVouchers":
+        return <AdminVouchersScreen onBack={() => setScreen("adminDashboard")} />;
       default:
         return null;
     }
   };
 
-  const isMainScreen = ["home", "mall", "explore", "event", "profile", "cart", "checkout", "paymentCOD", "paymentQR", "productDetail", "orderDetail", "adminDashboard", "adminUsers", "adminProducts", "adminOrders", "adminVouchers", "adminEvents", "adminQuests"].includes(screen);
+  const isMainScreen = ["home", "mall", "explore", "event", "profile", "cart", "checkout", "paymentCOD", "paymentQR", "productDetail", "orderDetail", "adminDashboard", "adminUsers", "adminProducts", "adminOrders", "adminCategories", "adminVouchers", "adminEvents", "adminQuests"].includes(screen);
 
   // Màn hình tự quản lý scroll riêng — không cần ScrollView bọc ngoài
-  const isFullscreenScreen = ["explore", "cart", "checkout", "paymentCOD", "paymentQR", "productDetail", "orderDetail", "adminDashboard", "adminUsers", "adminProducts", "adminOrders", "adminVouchers", "adminEvents", "adminQuests"].includes(screen);
+  const isFullscreenScreen = ["explore", "cart", "checkout", "paymentCOD", "paymentQR", "productDetail", "orderDetail", "adminDashboard", "adminUsers", "adminProducts", "adminOrders", "adminCategories", "adminVouchers", "adminEvents", "adminQuests"].includes(screen);
 
   return (
     <SafeAreaView style={styles.container}>

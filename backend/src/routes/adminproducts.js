@@ -53,24 +53,25 @@ router.get('/', async (req, res) => {
 
 // 2. Thêm sản phẩm mới
 router.post('/admin/add', async (req, res) => {
-    const { ten_san_pham, gia_tien, so_luong_kho, category_id, hinh_anh_url, dang_kinh_doanh } = req.body;
+    const { ten_san_pham, gia_tien, so_luong_kho, category_id, hinh_anh_url, dang_kinh_doanh, mo_ta } = req.body;
 
     try {
         const sql = `
-            INSERT INTO products (ten_san_pham, gia_tien, so_luong_kho, category_id, hinh_anh_url, dang_kinh_doanh) 
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO products (ten_san_pham, gia_tien, so_luong_kho, category_id, hinh_anh_url, dang_kinh_doanh, mo_ta) 
+            VALUES (?, ?, ?, ?, ?, ?, ?)
         `;
 
-        await pool.execute(sql, [
+        const [result] = await pool.execute(sql, [
             ten_san_pham,
             gia_tien,
             so_luong_kho,
             category_id || null,
-            hinh_anh_url,
-            dang_kinh_doanh === true || dang_kinh_doanh === 'true' ? 1 : 0
+            hinh_anh_url || null,
+            dang_kinh_doanh === true || dang_kinh_doanh === 'true' || dang_kinh_doanh === 1 ? 1 : 0,
+            mo_ta || null
         ]);
 
-        res.status(201).json({ success: true, message: "Thêm thành công!" });
+        res.status(201).json({ success: true, id: result.insertId, message: "Thêm sản phẩm thành công!" });
     } catch (error) {
         console.error("LỖI SQL KHI THÊM:", error.sqlMessage);
         res.status(500).json({ success: false, message: "Lỗi Database: " + error.sqlMessage });
@@ -80,24 +81,41 @@ router.post('/admin/add', async (req, res) => {
 // 3. Cập nhật sản phẩm
 router.put('/admin/update/:id', async (req, res) => {
     const { id } = req.params;
-    const { ten_san_pham, gia_tien, so_luong_kho, category_id, hinh_anh_url, dang_kinh_doanh } = req.body;
+    const { ten_san_pham, gia_tien, so_luong_kho, category_id, hinh_anh_url, dang_kinh_doanh, mo_ta } = req.body;
 
     try {
         const sql = `
             UPDATE products 
-            SET ten_san_pham=?, gia_tien=?, so_luong_kho=?, category_id=?, hinh_anh_url=?, dang_kinh_doanh=? 
+            SET ten_san_pham=?, gia_tien=?, so_luong_kho=?, category_id=?, hinh_anh_url=?, dang_kinh_doanh=?, mo_ta=? 
             WHERE id=?
         `;
 
         await pool.execute(sql, [
-            ten_san_pham, gia_tien, so_luong_kho, category_id || null, hinh_anh_url,
-            dang_kinh_doanh === true || dang_kinh_doanh === 'true' ? 1 : 0,
+            ten_san_pham, 
+            gia_tien, 
+            so_luong_kho, 
+            category_id || null, 
+            hinh_anh_url || null,
+            dang_kinh_doanh === true || dang_kinh_doanh === 'true' || dang_kinh_doanh === 1 ? 1 : 0,
+            mo_ta || null,
             id
         ]);
 
-        res.json({ success: true, message: "Cập nhật thành công!" });
+        res.json({ success: true, message: "Cập nhật sản phẩm thành công!" });
     } catch (error) {
         console.error("LỖI SQL KHI SỬA:", error.sqlMessage);
+        res.status(500).json({ success: false, message: "Lỗi Database: " + error.sqlMessage });
+    }
+});
+
+// 3.1 Chuyển đổi trạng thái kinh doanh nhanh (Toggle Status)
+router.put('/admin/toggle-status/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        await pool.execute('UPDATE products SET dang_kinh_doanh = NOT dang_kinh_doanh WHERE id = ?', [id]);
+        res.json({ success: true, message: "Cập nhật trạng thái kinh doanh thành công!" });
+    } catch (error) {
+        console.error("LỖI SQL KHI ĐỔI TRẠNG THÁI:", error.sqlMessage);
         res.status(500).json({ success: false, message: "Lỗi Database: " + error.sqlMessage });
     }
 });

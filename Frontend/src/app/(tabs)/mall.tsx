@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { View, Text, StyleSheet, Image, TouchableOpacity, TextInput, FlatList, ActivityIndicator, Alert, ScrollView } from "react-native";
-import { Search, Plus, ShoppingCart } from "lucide-react-native";
+import { Search, Plus, ShoppingCart, RotateCcw } from "lucide-react-native";
 import { getProducts } from "../../services/productService";
 import { getCategories } from "../../services/categoryService";
 import { addToCart, getCart } from "../../services/cartService";
@@ -145,18 +145,39 @@ export default function MallScreen({
     return resolveProductImage(urlPath);
   };
 
+  const handleReload = async () => {
+    try {
+      setLoading(true);
+      const [prodList, catList] = await Promise.all([
+        getProducts(),
+        getCategories()
+      ]);
+      setProducts(prodList);
+      setCategories(catList);
+    } catch (err) {
+      console.error("Lỗi tải lại mall:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <View style={styles.container}>
       <View style={styles.headerRow}>
         <Text style={styles.title}>Cửa hàng 🌿</Text>
-        <TouchableOpacity style={styles.cartButton} onPress={() => onOpenCart && onOpenCart()}>
-          <ShoppingCart size={20} stroke="#1A2E1A" />
-          {cartCount > 0 && (
-            <View style={styles.cartBadge}>
-              <Text style={styles.cartBadgeText}>{cartCount}</Text>
-            </View>
-          )}
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <TouchableOpacity style={styles.cartButton} onPress={handleReload}>
+            <RotateCcw size={18} stroke="#1A2E1A" />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.cartButton} onPress={() => onOpenCart && onOpenCart()}>
+            <ShoppingCart size={20} stroke="#1A2E1A" />
+            {cartCount > 0 && (
+              <View style={styles.cartBadge}>
+                <Text style={styles.cartBadgeText}>{cartCount}</Text>
+              </View>
+            )}
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={styles.searchRow}>
