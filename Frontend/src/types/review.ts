@@ -15,6 +15,7 @@ export type ReviewComment = {
   parent_id?: number | null;
   noi_dung: string;
   created_at: string;
+  like_count?: number;
   replies?: ReviewComment[];
 };
 

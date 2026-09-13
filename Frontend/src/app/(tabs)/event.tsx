@@ -20,7 +20,7 @@ import Svg, {
   Circle,
   G,
 } from "react-native-svg";
-import { Bell, Star, CheckCircle2, Gift, Ticket, Truck, X, ChevronRight, Droplets, Leaf, Copy, Sparkles, Tag, Sprout } from "lucide-react-native";
+import { Bell, Star, CheckCircle2, Gift, Ticket, Truck, X, ChevronRight, Droplets, Leaf, Copy, Sparkles, Tag, Sprout, Share2 } from "lucide-react-native";
 import {
   requestNotificationPermission,
   scheduleDailyWaterReminder,
@@ -32,6 +32,9 @@ import { useVoucher } from "../../context/VoucherContext";
 import { useAuth } from "../../context/AuthContext";
 import axiosClient from "../../api/axiosClient";
 import { resolveProductImageByName } from "../../assets/productImages";
+import { HarvestCelebrationModal } from "../components/event/HarvestCelebrationModal";
+import { WaterReminderModal } from "../components/event/WaterReminderModal";
+import { createReview } from "../../services/reviewService";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -757,6 +760,17 @@ export default function EventScreen({ onOpenExplore }: EventScreenProps) {
   const [remainingMs, setRemainingMs] = useState(STAGE_BASE_DURATION_MS);
   const [notifScheduledId, setNotifScheduledId] = useState<string | null>(null);
   const [selectedSeed, setSelectedSeed] = useState<Seed | null>(null);
+  const [harvestModalVisible, setHarvestModalVisible] = useState(false);
+  const [harvestModalData, setHarvestModalData] = useState<{
+    seedName: string;
+    stageLabel: string;
+    stageEmoji?: string;
+    voucherCode: string;
+    voucherLabel: string;
+    voucherDesc?: string;
+  } | null>(null);
+  const [waterReminderModalVisible, setWaterReminderModalVisible] = useState(false);
+  const [sharingFeed, setSharingFeed] = useState(false);
   const progressLoadedRef = useRef(false);
   const progressApiAvailableRef = useRef(true);
 
@@ -1115,6 +1129,8 @@ export default function EventScreen({ onOpenExplore }: EventScreenProps) {
     setRemainingMs(STAGE_BASE_DURATION_MS);
     setSeedPickerOpen(false);
     setSeedInfo(null);
+    // Xóa hạt giống đã trồng ra khỏi kho (mỗi hạt chỉ trồng 1 lần)
+    setUnlockedSeeds(prev => prev.filter(s => s.id !== seed.id));
     saveProgress({ selectedSeed: seed, stage: 1, stageStartTime: Date.now(), timeReduced: 0, waterTurns, fertTurns, waterMax, fertMax, missions, claimedVouchers, notifOn });
   }, [waterTurns, fertTurns, waterMax, fertMax, missions, claimedVouchers, notifOn, saveProgress]);
 
@@ -1218,32 +1234,46 @@ export default function EventScreen({ onOpenExplore }: EventScreenProps) {
         ? claimedVouchers
         : [...claimedVouchers, stageToClaim];
 
+      const treeNameBeforeReset = selectedSeed?.name || "Cây Xanh";
+      const stageLabelBeforeReset = meta.label;
+      const stageEmojiBeforeReset = meta.emoji;
+      const voucherLabelBeforeReset = meta.voucher.label;
+      const voucherDescBeforeReset = meta.desc;
+
       setClaimedVouchers(nextClaimedVouchers);
       addVoucher(code, meta.voucher.label, meta.desc);
 
-      if (stageToClaim < stage) {
-        // Voucher Claim Reset: Chỉ reset cây về Stage 0, KHÔNG reset nhiệm vụ hay lượt tưới/phân của ngày
-        saveProgress({
-          selectedSeed: null,
-          stage: 0,
-          stageStartTime: Date.now(),
-          timeReduced: 0,
-          waterTurns,
-          fertTurns,
-          waterMax,
-          fertMax,
-          missions,
-          claimedVouchers: nextClaimedVouchers,
-          notifOn,
-          resetReason: "voucher_claim_tree_reset",
-        });
-        resetPlantForNewSeed();
-      } else {
-        saveProgress({ selectedSeed, stage, stageStartTime, timeReduced, waterTurns, fertTurns, waterMax, fertMax, missions, claimedVouchers: nextClaimedVouchers, notifOn, resetReason: "stage_voucher_claim" });
-      }
+      // Khi nhận bất kỳ voucher nào, cây cũng sẽ reset về giai đoạn 0 (chọn hạt giống mới)
+      // KHÔNG reset nhiệm vụ hay lượt tưới/bón phân của ngày
+      saveProgress({
+        selectedSeed: null,
+        stage: 0,
+        stageStartTime: Date.now(),
+        timeReduced: 0,
+        waterTurns,
+        fertTurns,
+        waterMax,
+        fertMax,
+        missions,
+        claimedVouchers: nextClaimedVouchers,
+        notifOn,
+        resetReason: "voucher_claim_tree_reset",
+      });
+      resetPlantForNewSeed();
 
       setPendingVoucherStage(null);
       setLegacyResetConfirmStage(null);
+
+      // Mở Pop-up thu hoạch chúc mừng nhận quà
+      setHarvestModalData({
+        seedName: treeNameBeforeReset,
+        stageLabel: stageLabelBeforeReset,
+        stageEmoji: stageEmojiBeforeReset,
+        voucherCode: code,
+        voucherLabel: voucherLabelBeforeReset,
+        voucherDesc: voucherDescBeforeReset,
+      });
+      setHarvestModalVisible(true);
     };
 
     try {
@@ -1300,28 +1330,120 @@ export default function EventScreen({ onOpenExplore }: EventScreenProps) {
     // Timer đã tự reset khi stage thay đổi — chỉ đóng dialog
   }, []);
 
-  // ── Handler: Bật thông báo ────────────────────────────────────────────────
-  const handleToggleNotif = useCallback(async () => {
-    if (!notifOn) {
-      const granted = await requestNotificationPermission();
-      if (granted) {
-        await scheduleDailyWaterReminder();
-        // Lên lịch thông báo sắp xong (khi còn 30 phút)
-        const remaining = remainingMs - 30 * 60 * 1000;
-        if (remaining > 0) {
-          const meta = STAGE_META[stage < 4 ? (stage + 1) as StageKey : 4];
-          const id = await scheduleStageAlmostDoneNotification(meta.label, Math.floor(remaining / 1000));
-          if (id) setNotifScheduledId(id);
-        }
-        setNotifOn(true);
-        saveProgress({ selectedSeed, stage, stageStartTime, timeReduced, waterTurns, fertTurns, waterMax, fertMax, missions, claimedVouchers, notifOn: true });
+  // ── Handler: 1-Click Khoe cây lên Feed Đánh giá ─────────────────────────
+  const handleOneClickShareToFeed = useCallback(
+    async (customData?: {
+      seedName: string;
+      stageLabel: string;
+      stageEmoji?: string;
+      voucherLabel?: string;
+    }) => {
+      if (!user) {
+        Alert.alert("Yêu cầu đăng nhập", "Vui lòng đăng nhập để chia sẻ cây lên Feed Đánh giá.");
+        return;
       }
-    } else {
-      await cancelDailyWaterReminder();
-      setNotifOn(false);
-      saveProgress({ selectedSeed, stage, stageStartTime, timeReduced, waterTurns, fertTurns, waterMax, fertMax, missions, claimedVouchers, notifOn: false });
-    }
-  }, [notifOn, remainingMs, stage, selectedSeed, stageStartTime, timeReduced, waterTurns, fertTurns, waterMax, fertMax, missions, claimedVouchers, saveProgress]);
+
+      const treeName = customData?.seedName || selectedSeed?.name || "Cây Xanh";
+      const currentMeta = STAGE_META[stage];
+      const stageName = customData?.stageLabel || currentMeta.label;
+      const stageEmoji = customData?.stageEmoji || currentMeta.emoji;
+      const giftInfo = customData?.voucherLabel ? ` và vừa nhận được phần thưởng ${customData.voucherLabel}` : "";
+
+      const content = `🎉 Cây "${treeName}" của mình trong sự kiện Nuôi Cây Ảo đã đạt giai đoạn "${stageName} ${stageEmoji}"${giftInfo}! Cây phát triển rất tươi xanh và rực rỡ. Mọi người cùng vào tham gia chăm sóc cây nhận quà nhé! 🌿✨ #NuoiCayAo #PlantApp`;
+
+      try {
+        setSharingFeed(true);
+        await createReview({
+          user_id: user.id,
+          so_sao: 5,
+          noi_dung: content,
+          images: [],
+          category_tag: "Khoe cây 🌿",
+        });
+
+        // Tự động nhận thưởng nhiệm vụ 3: "Chia sẻ sự kiện" (+1 lượt tưới) nếu chưa nhận
+        if (!missions[3]) {
+          handleClaimMission(3);
+        }
+
+        Alert.alert(
+          "Khoe cây thành công! 🎉",
+          "Bài viết đã được đăng lên Feed Đánh giá (chuyên mục Khoe cây 🌿) và bạn đã được cộng thêm +1 lượt tưới nước 💧.",
+          [
+            { text: "Ở lại", style: "cancel" },
+            {
+              text: "Xem trên Feed 🌿",
+              onPress: () => {
+                setHarvestModalVisible(false);
+                onOpenExplore?.();
+              },
+            },
+          ]
+        );
+      } catch (error: any) {
+        console.error("Lỗi đăng bài khoe cây:", error?.response?.data || error?.message || error);
+        Alert.alert("Không thể đăng bài", "Đã xảy ra sự cố khi đăng bài khoe cây. Vui lòng thử lại sau.");
+      } finally {
+        setSharingFeed(false);
+      }
+    },
+    [user, selectedSeed, stage, missions, handleClaimMission, onOpenExplore]
+  );
+
+  // ── Handler: Lưu cài đặt nhắc nhở tưới cây ─────────────────────────────────
+  const handleSaveReminderSettings = useCallback(
+    async (enabled: boolean, morning: boolean, evening: boolean) => {
+      if (enabled) {
+        const granted = await requestNotificationPermission();
+        if (!granted) {
+          Alert.alert(
+            "Chưa cấp quyền thông báo",
+            "Vui lòng bật quyền thông báo trong Cài đặt của thiết bị để nhận lời nhắc tưới cây."
+          );
+          return;
+        }
+        await scheduleDailyWaterReminder(morning, evening);
+        setNotifOn(true);
+        saveProgress({
+          selectedSeed,
+          stage,
+          stageStartTime,
+          timeReduced,
+          waterTurns,
+          fertTurns,
+          waterMax,
+          fertMax,
+          missions,
+          claimedVouchers,
+          notifOn: true,
+        });
+        Alert.alert("Thành công", "Đã lưu cài đặt nhắc nhở tưới cây hằng ngày!");
+      } else {
+        await cancelDailyWaterReminder();
+        setNotifOn(false);
+        saveProgress({
+          selectedSeed,
+          stage,
+          stageStartTime,
+          timeReduced,
+          waterTurns,
+          fertTurns,
+          waterMax,
+          fertMax,
+          missions,
+          claimedVouchers,
+          notifOn: false,
+        });
+        Alert.alert("Đã tắt", "Đã tắt tất cả nhắc nhở tưới cây.");
+      }
+    },
+    [selectedSeed, stage, stageStartTime, timeReduced, waterTurns, fertTurns, waterMax, fertMax, missions, claimedVouchers, saveProgress]
+  );
+
+  // ── Handler: Bật thông báo nhanh ──────────────────────────────────────────
+  const handleToggleNotif = useCallback(async () => {
+    setWaterReminderModalVisible(true);
+  }, []);
 
   // ── Render ─────────────────────────────────────────────────────────────────
   const meta = STAGE_META[stage];
@@ -1503,6 +1625,40 @@ export default function EventScreen({ onOpenExplore }: EventScreenProps) {
                   </Animated.View>
                 </View>
               )}
+
+              {/* 1-Click Khoe Cây Lên Feed Button */}
+              {stage !== 0 && (
+                <TouchableOpacity
+                  style={styles.oneClickShareBtn}
+                  onPress={() => handleOneClickShareToFeed()}
+                  disabled={sharingFeed}
+                  activeOpacity={0.85}
+                >
+                  {sharingFeed ? (
+                    <ActivityIndicator size="small" color="#2E7D32" />
+                  ) : (
+                    <>
+                      <Share2 size={16} color="#2E7D32" />
+                      <Text style={styles.oneClickShareText}>1-Click Khoe Cây Lên Feed</Text>
+                      <View style={styles.oneClickShareBadge}>
+                        <Text style={styles.oneClickShareBadgeText}>+1 Tưới 💧</Text>
+                      </View>
+                    </>
+                  )}
+                </TouchableOpacity>
+              )}
+
+              {/* Nút Thu Hoạch Lớn khi cây đã nở rộ (Giai đoạn 4) */}
+              {isMaxStage && (
+                <TouchableOpacity
+                  style={styles.harvestNowBigBtn}
+                  onPress={() => setPendingVoucherStage(4)}
+                  activeOpacity={0.85}
+                >
+                  <Gift size={20} color="#fff" />
+                  <Text style={styles.harvestNowBigText}>🎉 Thu Hoạch & Nhận Voucher 50% Ngay</Text>
+                </TouchableOpacity>
+              )}
             </View>
 
             {/* ── Voucher Rewards Section ─────────────────────────────────────── */}
@@ -1596,17 +1752,24 @@ export default function EventScreen({ onOpenExplore }: EventScreenProps) {
 
             {/* ── Notification Card ────────────────────────────────────────────── */}
             <View style={styles.notifCard}>
-              <View style={styles.notifIconBox}>
+              <View style={[styles.notifIconBox, notifOn && { backgroundColor: "#2E7D32" }]}>
                 <Bell size={20} stroke="#fff" />
               </View>
-              <Text style={styles.notifText}>
-                Nhận thông báo nhắc tưới cây mỗi ngày và khi cây lên giai đoạn mới!
-              </Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.notifTitle}>
+                  {notifOn ? "Nhắc nhở tưới cây: Đang bật ✓" : "Nhắc nhở chăm sóc cây"}
+                </Text>
+                <Text style={styles.notifText}>
+                  {notifOn
+                    ? "Đã lên lịch nhắc lúc 08:00 sáng và 18:00 chiều mỗi ngày."
+                    : "Bật nhắc nhở định kỳ để không bỏ lỡ các đợt tưới nước cho cây."}
+                </Text>
+              </View>
               <TouchableOpacity
                 style={[styles.notifToggle, { backgroundColor: notifOn ? "#2E7D32" : "#1565C0" }]}
-                onPress={handleToggleNotif}
+                onPress={() => setWaterReminderModalVisible(true)}
               >
-                <Text style={styles.notifToggleText}>{notifOn ? "Bật ✓" : "Bật"}</Text>
+                <Text style={styles.notifToggleText}>{notifOn ? "Cài đặt" : "Bật"}</Text>
               </TouchableOpacity>
             </View>
           </>
@@ -1794,6 +1957,35 @@ export default function EventScreen({ onOpenExplore }: EventScreenProps) {
         onClose={() => setSeedPickerOpen(false)}
         onSelect={handleViewSeedInfo}
         seeds={unlockedSeeds}
+      />
+
+      {/* ── Harvest Celebration Modal ────────────────────────────────────────── */}
+      {harvestModalData && (
+        <HarvestCelebrationModal
+          visible={harvestModalVisible}
+          seedName={harvestModalData.seedName}
+          stageLabel={harvestModalData.stageLabel}
+          stageEmoji={harvestModalData.stageEmoji}
+          voucherCode={harvestModalData.voucherCode}
+          voucherLabel={harvestModalData.voucherLabel}
+          voucherDesc={harvestModalData.voucherDesc}
+          onClose={() => setHarvestModalVisible(false)}
+          onOneClickShare={() => handleOneClickShareToFeed(harvestModalData)}
+          sharing={sharingFeed}
+          onStartNewSeed={() => {
+            setHarvestModalVisible(false);
+            setSeedPickerOpen(true);
+          }}
+          onCopyCode={(code) => handleCopyCode(code, harvestModalData.voucherLabel)}
+        />
+      )}
+
+      {/* ── Water Reminder Modal ─────────────────────────────────────────────── */}
+      <WaterReminderModal
+        visible={waterReminderModalVisible}
+        notifOn={notifOn}
+        onClose={() => setWaterReminderModalVisible(false)}
+        onSaveReminder={handleSaveReminderSettings}
       />
     </View>
   );
@@ -2102,6 +2294,60 @@ const styles = StyleSheet.create({
   missionDots: { flexDirection: "row", gap: 4, alignItems: "center" },
   missionDot: { width: 8, height: 8, borderRadius: 4 },
 
+  // 1-Click Khoe Cây Lên Feed
+  oneClickShareBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: "#F0F7ED",
+    borderWidth: 1.5,
+    borderColor: "#A5D6A7",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    marginTop: 14,
+  },
+  oneClickShareText: {
+    color: "#2E7D32",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  oneClickShareBadge: {
+    backgroundColor: "#E8F5E9",
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#C8E6C9",
+  },
+  oneClickShareBadgeText: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#2E7D32",
+  },
+  harvestNowBigBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    backgroundColor: "#FF6F00",
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 18,
+    marginTop: 14,
+    shadowColor: "#FF6F00",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  harvestNowBigText: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "900",
+  },
+
   // Notification card
   notifCard: {
     flexDirection: "row",
@@ -2114,7 +2360,8 @@ const styles = StyleSheet.create({
     borderColor: "#90CAF9",
   },
   notifIconBox: { width: 44, height: 44, borderRadius: 14, backgroundColor: "#1565C0", alignItems: "center", justifyContent: "center" },
-  notifText: { flex: 1, fontSize: 12, color: "#1a2e1a", fontWeight: "600", lineHeight: 18 },
+  notifTitle: { fontSize: 13, fontWeight: "800", color: "#1a2e1a", marginBottom: 2 },
+  notifText: { fontSize: 12, color: "#556b55", fontWeight: "500", lineHeight: 17 },
   notifToggle: { borderRadius: 12, paddingHorizontal: 14, paddingVertical: 8 },
   notifToggleText: { color: "#fff", fontSize: 12, fontWeight: "800" },
 

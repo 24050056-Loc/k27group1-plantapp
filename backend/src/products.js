@@ -27,6 +27,34 @@ router.get('', async (req, res) => {
 });
 
 // ===================================================
+// API TÌM KIẾM SẢN PHẨM
+// Frontend gọi: GET /products/search?q=keyword
+// ===================================================
+router.get('/search', async (req, res) => {
+    try {
+        const keyword = (req.query.q || '').trim();
+        if (!keyword) {
+            return res.json([]);
+        }
+        const searchTerm = `%${keyword}%`;
+        const query = `
+            SELECT id, ten_san_pham, gia_tien, hinh_anh_url, mo_ta, danh_muc_id
+            FROM products
+            WHERE ten_san_pham LIKE ? OR mo_ta LIKE ?
+            ORDER BY
+                CASE WHEN ten_san_pham LIKE ? THEN 0 ELSE 1 END,
+                ten_san_pham ASC
+            LIMIT 10
+        `;
+        const [rows] = await pool.execute(query, [searchTerm, searchTerm, `${keyword}%`]);
+        res.json(rows);
+    } catch (error) {
+        console.error("Lỗi tìm kiếm sản phẩm:", error);
+        res.status(500).json({ message: "Lỗi tìm kiếm sản phẩm" });
+    }
+});
+
+// ===================================================
 // 1. API CHO TRANG CHỦ - Phải khai báo TRƯỚC route '/'
 // Frontend gọi: GET /products/featured
 // ===================================================

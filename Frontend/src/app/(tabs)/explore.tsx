@@ -10,29 +10,17 @@ import {
   SafeAreaView,
   StatusBar,
   ActivityIndicator,
-  Platform
+  Platform,
+  Alert
 } from "react-native";
-import { Compass, Sparkles, ImagePlus, Filter, Search } from "lucide-react-native";
+import { Compass, Sparkles, ImagePlus, Search, WifiOff, RotateCcw } from "lucide-react-native";
 import { Review } from "../../types/review";
-import { getReviews } from "../../services/reviewService";
+import { getReviews, resolveImageUrl } from "../../services/reviewService";
 import { useAuth } from "../../context/AuthContext";
 import { ReviewCard } from "../components/review/ReviewCard";
 import { CreatePostModal } from "../components/review/CreatePostModal";
 import { ImageLightboxModal } from "../components/review/ImageLightboxModal";
 import { CommentSheetModal } from "../components/review/CommentSheetModal";
-
-const normalizeAvatarUrl = (value?: string | null, fallback = "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150") => {
-  if (!value) return fallback;
-  const trimmed = value.trim();
-  if (!trimmed) return fallback;
-
-  const driveMatch = trimmed.match(/(?:\/d\/|id=)([A-Za-z0-9_-]{10,})/);
-  if (driveMatch?.[1] && trimmed.includes("drive.google.com")) {
-    return `https://drive.google.com/uc?export=view&id=${driveMatch[1]}`;
-  }
-
-  return trimmed;
-};
 
 const CATEGORIES = ["Tất cả", "Đánh giá hot", "Khoe cây 🌿", "Mẹo chăm sóc"];
 
@@ -49,11 +37,12 @@ export default function ExploreScreen({
 }: ExploreScreenProps) {
   const { user } = useAuth();
   const profileName = user?.ho_ten || user?.ten_dang_nhap || "Bạn";
-  const profileAvatar = normalizeAvatarUrl(user?.avatar);
+  const profileAvatar = resolveImageUrl(user?.avatar);
   const [selectedCategory, setSelectedCategory] = useState<string>("Tất cả");
   const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Modals state
   const [lightboxState, setLightboxState] = useState<{ visible: boolean; images: string[]; index: number }>({
@@ -71,17 +60,31 @@ export default function ExploreScreen({
   }, [selectedCategory, user?.id]);
 
   const loadFeed = async (category: string) => {
-    setLoading(true);
-    const data = await getReviews(category, user?.id);
-    setReviews(data);
-    setLoading(false);
+    try {
+      setLoading(true);
+      setError(null);
+      const data = await getReviews(category, user?.id);
+      setReviews(data);
+    } catch (err: any) {
+      console.error("Lỗi load feed explore:", err);
+      setError("Không thể kết nối đến máy chủ. Vui lòng kiểm tra kết nối mạng.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleRefresh = async () => {
-    setRefreshing(true);
-    const data = await getReviews(selectedCategory, user?.id);
-    setReviews(data);
-    setRefreshing(false);
+    try {
+      setRefreshing(true);
+      setError(null);
+      const data = await getReviews(selectedCategory, user?.id);
+      setReviews(data);
+    } catch (err: any) {
+      console.error("Lỗi refresh explore:", err);
+      setError("Không thể kết nối đến máy chủ. Vui lòng kiểm tra kết nối mạng.");
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const handlePostSuccess = (newReview: Review) => {
@@ -94,6 +97,24 @@ export default function ExploreScreen({
 
   const handleOpenComments = (reviewId: number) => {
     setCommentModalState({ visible: true, reviewId });
+  };
+
+  const handleCommentCountChange = (reviewId: number, delta: number) => {
+    setReviews((prev) =>
+      prev.map((r) =>
+        r.id === reviewId
+          ? { ...r, comment_count: Math.max(0, (r.comment_count || 0) + delta) }
+          : r
+      )
+    );
+  };
+
+  const handleOpenCreatePostCheck = () => {
+    if (!user) {
+      Alert.alert("Yêu cầu đăng nhập", "Vui lòng đăng nhập để chia sẻ bài viết hoặc khoe cây của bạn.");
+      return;
+    }
+    onOpenCreatePost();
   };
 
   return (
@@ -111,7 +132,6 @@ export default function ExploreScreen({
           <TouchableOpacity style={styles.iconCircleBtn}>
             <Search size={20} color="#1A2E1A" />
           </TouchableOpacity>
-
         </View>
       </View>
 
@@ -144,7 +164,20 @@ export default function ExploreScreen({
       {loading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#2E7D32" />
-          <Text style={styles.loadingText}>Đang tải bài viết mới nhất...</Text>
+          <Text style={styles.loadingText}>Đang tải bài viết từ máy chủ...</Text>
+        </View>
+      ) : error && reviews.length === 0 ? (
+        <View style={styles.errorContainer}>
+          <WifiOff size={48} color="#A5D6A7" />
+          <Text style={styles.errorTitle}>Không thể kết nối đến máy chủ</Text>
+          <Text style={styles.errorSubText}>Vui lòng kiểm tra kết nối mạng và thử lại.</Text>
+          <TouchableOpacity
+            style={styles.retryBtn}
+            onPress={() => loadFeed(selectedCategory)}
+          >
+            <RotateCcw size={18} color="#FFF" style={{ marginRight: 6 }} />
+            <Text style={styles.retryBtnText}>Thử lại</Text>
+          </TouchableOpacity>
         </View>
       ) : (
         <FlatList
@@ -164,7 +197,7 @@ export default function ExploreScreen({
             <View style={styles.composerCard}>
               <TouchableOpacity
                 style={styles.composerRow}
-                onPress={onOpenCreatePost}
+                onPress={handleOpenCreatePostCheck}
               >
                 <Image
                   source={{ uri: profileAvatar }}
@@ -180,7 +213,7 @@ export default function ExploreScreen({
               <View style={styles.composerActions}>
                 <TouchableOpacity
                   style={styles.composerActionBtn}
-                  onPress={onOpenCreatePost}
+                  onPress={handleOpenCreatePostCheck}
                 >
                   <ImagePlus size={18} color="#2E7D32" />
                   <Text style={styles.composerActionText}>Ảnh/Đánh giá</Text>
@@ -188,7 +221,7 @@ export default function ExploreScreen({
 
                 <TouchableOpacity
                   style={styles.composerActionBtn}
-                  onPress={onOpenCreatePost}
+                  onPress={handleOpenCreatePostCheck}
                 >
                   <Sparkles size={18} color="#FF9800" />
                   <Text style={styles.composerActionText}>Khoe Vườn Cây</Text>
@@ -214,7 +247,7 @@ export default function ExploreScreen({
       {/* Modals */}
       <CreatePostModal
         visible={isCreatePostOpen}
-        defaultCategory={selectedCategory !== "Tất cả" ? selectedCategory : "Mới nhất"}
+        defaultCategory={selectedCategory !== "Tất cả" ? selectedCategory : "Khoe cây 🌿"}
         onClose={onCloseCreatePost}
         onPostSuccess={handlePostSuccess}
       />
@@ -230,6 +263,7 @@ export default function ExploreScreen({
         visible={commentModalState.visible}
         reviewId={commentModalState.reviewId}
         onClose={() => setCommentModalState({ visible: false, reviewId: 0 })}
+        onCommentCountChange={(delta) => handleCommentCountChange(commentModalState.reviewId, delta)}
       />
     </SafeAreaView>
   );
@@ -272,20 +306,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8
   },
-  headerPostBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#2E7D32",
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 20,
-    gap: 4
-  },
-  headerPostBtnText: {
-    color: "#FFF",
-    fontSize: 13,
-    fontWeight: "700"
-  },
   chipContainer: {
     backgroundColor: "#FFF",
     paddingVertical: 10,
@@ -314,7 +334,7 @@ const styles = StyleSheet.create({
   },
   feedContent: {
     padding: 16,
-    paddingBottom: 80
+    paddingBottom: 100
   },
   composerCard: {
     backgroundColor: "#FFF",
@@ -332,7 +352,8 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    marginRight: 12
+    marginRight: 12,
+    backgroundColor: "#E8F5E9"
   },
   composerPlaceholder: {
     fontSize: 14,
@@ -374,6 +395,38 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     color: "#888",
+    fontSize: 14
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24
+  },
+  errorTitle: {
+    fontSize: 17,
+    fontWeight: "700",
+    color: "#2E7D32",
+    marginTop: 16
+  },
+  errorSubText: {
+    fontSize: 14,
+    color: "#757575",
+    textAlign: "center",
+    marginTop: 6,
+    marginBottom: 20
+  },
+  retryBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#2E7D32",
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 22
+  },
+  retryBtnText: {
+    color: "#FFF",
+    fontWeight: "700",
     fontSize: 14
   }
 });

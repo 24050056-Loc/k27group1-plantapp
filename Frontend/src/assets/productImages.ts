@@ -25,8 +25,68 @@ const productImages: { [key: string]: any } = {
   "SnakePlant.jpg": require('../../assets/products/SnakePlant.jpg'),
   "Succulent.jpg": require('../../assets/products/Succulent.jpg'),
   "VuSuaLoRen.jpg": require('../../assets/products/VuSuaLoRen.jpg'),
-  "XoaiCat.jpg": require('../../assets/products/XoaiCat.jpg')
+  "XoaiCat.jpg": require('../../assets/products/XoaiCat.jpg'),
+  "ComboCayNhietDoi.jpg": require('../../assets/products/ComboCayNhietDoi.jpg'),
+  "ComBoCayXuongRongMini.jpg": require('../../assets/products/ComBoCayXuongRongMini.jpg'),
+  "ComboHoaThaoMoc.jpg": require('../../assets/products/ComboHoaThaoMoc.jpg'),
+  "ComboHoaPhongKhach.jpg": require('../../assets/products/ComboHoaPhongKhach.jpg')
 };
+
+// ─── Ảnh từng giai đoạn phát triển (bestseller) ───────────────────────────────
+const growthStageImages: { [key: string]: any[] } = {
+  "bang-dai-loan": [
+    require('../../assets/bestseller/BangDaiLoanGD1.jpg'),
+    require('../../assets/bestseller/BangDaiLoanGD2.jpg'),
+    require('../../assets/bestseller/BangDaiLoanGD3.jpg'),
+    require('../../assets/bestseller/BangDaiLoanGD4.jpg'),
+  ],
+  "sau-rieng-ri6": [
+    require('../../assets/bestseller/SauRiengRi6GD1.jpg'),
+    require('../../assets/bestseller/SauRiengRi6GD2.jpg'),
+    require('../../assets/bestseller/SauRiengRi6GD3.jpg'),
+    require('../../assets/bestseller/SauRiengRi6GD4.jpg'),
+  ],
+  "luoi-ho": [
+    require('../../assets/bestseller/CayLuoiHoGD1.jpg'),
+    require('../../assets/bestseller/CayLuoiHoGD2.jpg'),
+    require('../../assets/bestseller/CayLuoiHoGD3.jpg'),
+    require('../../assets/bestseller/CayLuoiHoGD4.jpg'),
+  ],
+  "mang-cut": [
+    require('../../assets/bestseller/CayMangCutGD1.jpg'),
+    require('../../assets/bestseller/CayMangCutGD2.jpg'),
+    require('../../assets/bestseller/CayMangCutGD3.jpg'),
+    require('../../assets/bestseller/CayMangCutGD4.jpg'),
+  ],
+  "buoi-da-xanh": [
+    require('../../assets/bestseller/BuoiDaXanhGD1.jpg'),
+    require('../../assets/bestseller/BuoiDaXanhGD2.jpg'),
+    require('../../assets/bestseller/BuoiDaXanhGD3.jpg'),
+    require('../../assets/bestseller/BuoiDaXanhGD4.jpg'),
+  ],
+  "chom-chom-thai": [
+    require('../../assets/bestseller/ChomChomThaiGD1.jpg'),
+    require('../../assets/bestseller/ChomChomThaiGD2.jpg'),
+    require('../../assets/bestseller/ChomChomThaiGD3.jpg'),
+    require('../../assets/bestseller/ChomChomThaiGD4.jpg'),
+  ],
+};
+
+/**
+ * Lấy ảnh giai đoạn phát triển theo seedId và số thứ tự giai đoạn (0-3).
+ * Nếu không tìm thấy, trả về ảnh sản phẩm chính.
+ */
+export function resolveGrowthStageImage(
+  seedId: string,
+  stageIndex: number,
+  fallback: any
+): any {
+  const stages = growthStageImages[seedId];
+  if (stages && stages[stageIndex] !== undefined) {
+    return stages[stageIndex];
+  }
+  return fallback;
+}
 
 const DEFAULT_REMOTE = 'https://images.unsplash.com/photo-1501004318641-b39e6451bec6?w=300&fit=crop';
 
@@ -40,6 +100,10 @@ const keywordToImage: { [key: string]: string } = {
   "dâu xanh": "CayDauXanh.jpg",
   "dâu da": "CayDauXanh.jpg",
   "xương rồng": "cactus.jpg",
+  "nhiệt đới": "ComboCayNhietDoi.jpg",
+  "mini cactus": "ComBoCayXuongRongMini.jpg",
+  "thảo mộc": "ComboHoaThaoMoc.jpg",
+  "hoa phòng khách": "ComboHoaPhongKhach.jpg",
 };
 
 export function resolveProductImage(urlPath?: string | null) {

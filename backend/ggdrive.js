@@ -22,14 +22,13 @@ async function authorize() {
   if (client) {
     return client;
   }
-  client = await authenticate({
-    scopes: SCOPES,
-    keyfilePath: CLIENT_SECRET_PATH,
-  });
-  if (client.credentials) {
-    await saveCredentials(client);
+  if (!fs.existsSync(CLIENT_SECRET_PATH)) {
+    throw new Error('Chưa tìm thấy file client.json trong backend');
   }
-  return client;
+  if (!fs.existsSync(TOKEN_PATH)) {
+    throw new Error('Chưa có token.json ủy quyền Google Drive. Cần chạy node setup_drive_token.js để cấp quyền lần đầu.');
+  }
+  throw new Error('Không thể xác thực Google Drive');
 }
 
 async function loadSavedCredentialsIfExist() {

@@ -1,10 +1,11 @@
 {
   "expo": {
-    "name": "Modern Mobile Marketplace App",
-    "slug": "modern-mobile-marketplace-app",
+    "name": "Plantify",
+    "slug": "plantify",
+    "scheme": "plantify",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/Tree.png",
+    "icon": "./assets/LogoPlantApp.png",
     "userInterfaceStyle": "light",
     "assetBundlePatterns": [
       "**/*"
@@ -21,7 +22,7 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/Tree.png",
+          "image": "./assets/LogoPlantApp.png",
           "resizeMode": "contain",
           "backgroundColor": "#ffffff"
         }
@@ -36,21 +37,22 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/Tree.png",
+          "icon": "./assets/LogoPlantApp.png",
           "color": "#2E7D32",
           "defaultChannel": "plant-care",
           "androidMode": "default",
           "androidCollapsedTitle": "PlantApp 🌿"
         }
       ],
-      "expo-build-properties"
+      "expo-build-properties",
+      "expo-web-browser"
     ],
     "ios": {
       "supportsTablet": true
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/Tree.png",
+        "foregroundImage": "./assets/LogoPlantApp.png",
         "backgroundColor": "#ffffff"
       },
       "permissions": [
@@ -59,7 +61,7 @@
       "package": "com.TNMT.PlantApp"
     },
     "web": {
-      "favicon": "./assets/Tree.png"
+      "favicon": "./assets/LogoPlantApp.png"
     },
     "extra": {
       "router": {

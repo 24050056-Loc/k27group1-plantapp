@@ -1,11 +1,13 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
   StyleSheet,
   Image,
   TouchableOpacity,
-  Share
+  Share,
+  Alert,
+  Animated
 } from "react-native";
 import {
   Star,
@@ -16,7 +18,11 @@ import {
   MoreHorizontal
 } from "lucide-react-native";
 import { Review } from "../../../types/review";
-import { toggleReviewLike } from "../../../services/reviewService";
+import { toggleReviewLike, resolveImageUrl } from "../../../services/reviewService";
+import { useAuth } from "../../../context/AuthContext";
+
+const DEFAULT_AVATAR = "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150";
+const DEFAULT_IMAGE_PLACEHOLDER = "https://images.unsplash.com/photo-1545241047-6083a3684587?w=800";
 
 type ReviewCardProps = {
   review: Review;
@@ -29,25 +35,98 @@ export const ReviewCard: React.FC<ReviewCardProps> = ({
   onPressImage,
   onPressComment
 }) => {
-  const [isLiked, setIsLiked] = useState<boolean>(!!review.is_liked);
+  const { user } = useAuth();
+  const [isLiked, setIsLiked] = useState<boolean>(Boolean(review.is_liked));
   const [likeCount, setLikeCount] = useState<number>(review.so_luong_thich || 0);
   const [commentCount, setCommentCount] = useState<number>(review.comment_count || 0);
   const [expandedText, setExpandedText] = useState<boolean>(false);
+  const [avatarError, setAvatarError] = useState<boolean>(false);
+  const [mediaErrors, setMediaErrors] = useState<Record<number, boolean>>({});
+
+  // Animation refs for heart button
+  const heartScale = useRef(new Animated.Value(1)).current;
+  const heartParticleY = useRef(new Animated.Value(0)).current;
+  const heartParticleOpacity = useRef(new Animated.Value(0)).current;
+
+  // Đồng bộ trạng thái khi props review thay đổi từ API
+  useEffect(() => {
+    setIsLiked(Boolean(review.is_liked));
+    setLikeCount(review.so_luong_thich || 0);
+    setCommentCount(review.comment_count || 0);
+  }, [review.is_liked, review.so_luong_thich, review.comment_count]);
+
+  const triggerLikeAnimation = (liked: boolean) => {
+    if (liked) {
+      // Spring bounce khi like
+      heartParticleY.setValue(0);
+      heartParticleOpacity.setValue(1);
+      Animated.parallel([
+        Animated.sequence([
+          Animated.spring(heartScale, {
+            toValue: 1.45,
+            tension: 200,
+            friction: 4,
+            useNativeDriver: true
+          }),
+          Animated.spring(heartScale, {
+            toValue: 1,
+            tension: 120,
+            friction: 6,
+            useNativeDriver: true
+          })
+        ]),
+        Animated.sequence([
+          Animated.timing(heartParticleY, {
+            toValue: -28,
+            duration: 400,
+            useNativeDriver: true
+          }),
+          Animated.timing(heartParticleOpacity, {
+            toValue: 0,
+            duration: 200,
+            useNativeDriver: true
+          })
+        ])
+      ]).start();
+    } else {
+      // Pulse nhỏ khi unlike
+      Animated.sequence([
+        Animated.timing(heartScale, {
+          toValue: 0.8,
+          duration: 100,
+          useNativeDriver: true
+        }),
+        Animated.spring(heartScale, {
+          toValue: 1,
+          tension: 150,
+          friction: 5,
+          useNativeDriver: true
+        })
+      ]).start();
+    }
+  };
 
   const handleToggleLike = async () => {
+    if (!user) {
+      Alert.alert("Yêu cầu đăng nhập", "Vui lòng đăng nhập để thích bài viết này.");
+      return;
+    }
+
     // Optimistic Update
     const prevLiked = isLiked;
     const prevCount = likeCount;
+    const nextLiked = !prevLiked;
 
-    setIsLiked(!prevLiked);
-    setLikeCount(prevLiked ? prevCount - 1 : prevCount + 1);
+    setIsLiked(nextLiked);
+    setLikeCount(prevLiked ? Math.max(0, prevCount - 1) : prevCount + 1);
+    triggerLikeAnimation(nextLiked);
 
     try {
       const res = await toggleReviewLike(review.id);
       setIsLiked(res.is_liked);
       setLikeCount(res.total_likes);
     } catch (err) {
-      // Rollback on error
+      // Hoàn tác nếu lỗi
       setIsLiked(prevLiked);
       setLikeCount(prevCount);
     }
@@ -61,11 +140,15 @@ export const ReviewCard: React.FC<ReviewCardProps> = ({
         message: `Xem bài viết của ${review.user_name || "Người dùng"} trên PlantApp: "${reviewText}"`
       });
     } catch (error) {
-      console.log(error);
+      console.log("Lỗi Native Share:", error);
     }
   };
 
-  const mediaUrls = review.media?.map((m) => m.media_url).filter(Boolean) || [];
+  const mediaUrls = review.media?.map((m) => resolveImageUrl(m.media_url)).filter(Boolean) || [];
+
+  const handleMediaError = (idx: number) => {
+    setMediaErrors((prev) => ({ ...prev, [idx]: true }));
+  };
 
   const renderImageCollage = () => {
     if (mediaUrls.length === 0) return null;
@@ -77,7 +160,11 @@ export const ReviewCard: React.FC<ReviewCardProps> = ({
           onPress={() => onPressImage?.(mediaUrls, 0)}
           style={styles.singleImageWrapper}
         >
-          <Image source={{ uri: mediaUrls[0] }} style={styles.singleImage} />
+          <Image
+            source={{ uri: mediaErrors[0] ? DEFAULT_IMAGE_PLACEHOLDER : mediaUrls[0] }}
+            style={styles.singleImage}
+            onError={() => handleMediaError(0)}
+          />
         </TouchableOpacity>
       );
     }
@@ -92,7 +179,11 @@ export const ReviewCard: React.FC<ReviewCardProps> = ({
               onPress={() => onPressImage?.(mediaUrls, idx)}
               style={styles.halfImageWrapper}
             >
-              <Image source={{ uri: url }} style={styles.collageImage} />
+              <Image
+                source={{ uri: mediaErrors[idx] ? DEFAULT_IMAGE_PLACEHOLDER : url }}
+                style={styles.collageImage}
+                onError={() => handleMediaError(idx)}
+              />
             </TouchableOpacity>
           ))}
         </View>
@@ -107,19 +198,30 @@ export const ReviewCard: React.FC<ReviewCardProps> = ({
             onPress={() => onPressImage?.(mediaUrls, 0)}
             style={styles.largeLeftImageWrapper}
           >
-            <Image source={{ uri: mediaUrls[0] }} style={styles.collageImage} />
+            <Image
+              source={{ uri: mediaErrors[0] ? DEFAULT_IMAGE_PLACEHOLDER : mediaUrls[0] }}
+              style={styles.collageImage}
+              onError={() => handleMediaError(0)}
+            />
           </TouchableOpacity>
           <View style={styles.rightStackColumn}>
-            {mediaUrls.slice(1, 3).map((url, idx) => (
-              <TouchableOpacity
-                key={`${url}-${idx}`}
-                activeOpacity={0.9}
-                onPress={() => onPressImage?.(mediaUrls, idx + 1)}
-                style={styles.halfHeightImageWrapper}
-              >
-                <Image source={{ uri: url }} style={styles.collageImage} />
-              </TouchableOpacity>
-            ))}
+            {mediaUrls.slice(1, 3).map((url, idx) => {
+              const actualIdx = idx + 1;
+              return (
+                <TouchableOpacity
+                  key={`${url}-${actualIdx}`}
+                  activeOpacity={0.9}
+                  onPress={() => onPressImage?.(mediaUrls, actualIdx)}
+                  style={styles.halfHeightImageWrapper}
+                >
+                  <Image
+                    source={{ uri: mediaErrors[actualIdx] ? DEFAULT_IMAGE_PLACEHOLDER : url }}
+                    style={styles.collageImage}
+                    onError={() => handleMediaError(actualIdx)}
+                  />
+                </TouchableOpacity>
+              );
+            })}
           </View>
         </View>
       );
@@ -140,7 +242,11 @@ export const ReviewCard: React.FC<ReviewCardProps> = ({
               onPress={() => onPressImage?.(mediaUrls, idx)}
               style={styles.quadImageWrapper}
             >
-              <Image source={{ uri: url }} style={styles.collageImage} />
+              <Image
+                source={{ uri: mediaErrors[idx] ? DEFAULT_IMAGE_PLACEHOLDER : url }}
+                style={styles.collageImage}
+                onError={() => handleMediaError(idx)}
+              />
               {isLast && (
                 <View style={styles.overflowOverlay}>
                   <Text style={styles.overflowText}>+{extraCount}</Text>
@@ -153,15 +259,18 @@ export const ReviewCard: React.FC<ReviewCardProps> = ({
     );
   };
 
+  const avatarUrl = avatarError || !review.user_avatar
+    ? DEFAULT_AVATAR
+    : resolveImageUrl(review.user_avatar);
+
   return (
     <View style={styles.cardContainer}>
       {/* Header */}
       <View style={styles.header}>
         <Image
-          source={{
-            uri: review.user_avatar || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150"
-          }}
+          source={{ uri: avatarUrl }}
           style={styles.avatar}
+          onError={() => setAvatarError(true)}
         />
         <View style={styles.headerInfo}>
           <View style={styles.nameRow}>
@@ -235,16 +344,33 @@ export const ReviewCard: React.FC<ReviewCardProps> = ({
 
       {/* Action Buttons Bar */}
       <View style={styles.actionsBar}>
-        <TouchableOpacity style={styles.actionBtn} onPress={handleToggleLike}>
-          <Heart
-            size={20}
-            color={isLiked ? "#E53935" : "#666"}
-            fill={isLiked ? "#E53935" : "transparent"}
-          />
-          <Text style={[styles.actionBtnText, isLiked && styles.likedText]}>
-            Thích
-          </Text>
-        </TouchableOpacity>
+        <View style={styles.likeButtonWrapper}>
+          {/* Floating +1 particle */}
+          <Animated.Text
+            style={[
+              styles.likeParticle,
+              {
+                opacity: heartParticleOpacity,
+                transform: [{ translateY: heartParticleY }]
+              }
+            ]}
+          >
+            +1
+          </Animated.Text>
+
+          <TouchableOpacity style={styles.actionBtn} onPress={handleToggleLike} activeOpacity={0.7}>
+            <Animated.View style={{ transform: [{ scale: heartScale }] }}>
+              <Heart
+                size={20}
+                color={isLiked ? "#E53935" : "#666"}
+                fill={isLiked ? "#E53935" : "transparent"}
+              />
+            </Animated.View>
+            <Text style={[styles.actionBtnText, isLiked && styles.likedText]}>
+              Thích
+            </Text>
+          </TouchableOpacity>
+        </View>
 
         <TouchableOpacity
           style={styles.actionBtn}
@@ -286,7 +412,8 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    marginRight: 12
+    marginRight: 12,
+    backgroundColor: "#E8F5E9"
   },
   headerInfo: {
     flex: 1
@@ -362,7 +489,8 @@ const styles = StyleSheet.create({
     height: 240,
     borderRadius: 16,
     overflow: "hidden",
-    marginBottom: 12
+    marginBottom: 12,
+    backgroundColor: "#F0F4F0"
   },
   singleImage: {
     width: "100%",
@@ -377,7 +505,8 @@ const styles = StyleSheet.create({
   halfImageWrapper: {
     flex: 1,
     borderRadius: 12,
-    overflow: "hidden"
+    overflow: "hidden",
+    backgroundColor: "#F0F4F0"
   },
   collageImage: {
     width: "100%",
@@ -392,7 +521,8 @@ const styles = StyleSheet.create({
   largeLeftImageWrapper: {
     flex: 2,
     borderRadius: 12,
-    overflow: "hidden"
+    overflow: "hidden",
+    backgroundColor: "#F0F4F0"
   },
   rightStackColumn: {
     flex: 1,
@@ -401,7 +531,8 @@ const styles = StyleSheet.create({
   halfHeightImageWrapper: {
     flex: 1,
     borderRadius: 12,
-    overflow: "hidden"
+    overflow: "hidden",
+    backgroundColor: "#F0F4F0"
   },
   quadGrid: {
     flexDirection: "row",
@@ -415,7 +546,8 @@ const styles = StyleSheet.create({
     height: "48.5%",
     borderRadius: 12,
     overflow: "hidden",
-    position: "relative"
+    position: "relative",
+    backgroundColor: "#F0F4F0"
   },
   overflowOverlay: {
     position: "absolute",
@@ -455,6 +587,19 @@ const styles = StyleSheet.create({
     justifyContent: "space-around",
     alignItems: "center",
     paddingTop: 4
+  },
+  likeButtonWrapper: {
+    position: "relative",
+    alignItems: "center"
+  },
+  likeParticle: {
+    position: "absolute",
+    top: -4,
+    left: "50%",
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#E53935",
+    zIndex: 10
   },
   actionBtn: {
     flexDirection: "row",

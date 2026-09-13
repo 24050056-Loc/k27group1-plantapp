@@ -28,10 +28,11 @@ import {
   RefreshCw,
   Tag,
   Eye,
-  Check
+  Check,
+  Ticket
 } from 'lucide-react-native';
 import { useAuth } from '../../context/AuthContext';
-import { resolveProductImage } from '../../assets/productImages';
+import { resolveProductImage, resolveProductImageByName } from '../../assets/productImages';
 import apiConfig from '../../api.json';
 
 const BASE_URL = apiConfig.baseUrl || "http://192.168.190.52:8080";
@@ -49,6 +50,7 @@ interface OrderItem {
   trang_thai: string;
   phuong_thuc_thanh_toan?: string;
   ma_giam_gia?: string;
+  phi_van_chuyen?: number;
   ngay_dat_hang: string;
 }
 
@@ -56,7 +58,10 @@ interface OrderDetailProduct {
   id: number;
   product_id: number;
   so_luong: number;
-  don_gia: number;
+  don_gia?: number;
+  gia_tien?: string | number;
+  gia_luc_mua?: string | number;
+  price?: string | number;
   ten_san_pham?: string;
   hinh_anh_url?: string;
 }
@@ -245,12 +250,28 @@ export default function AdminOrdersScreen({ onBack }: { onBack: () => void }) {
     try {
       const res = await fetch(`${BASE_URL}/orders/${order.id}`);
       const data = await res.json();
-      if (data.success && data.data && Array.isArray(data.data.items)) {
-        setDetailItems(data.data.items);
-      } else if (Array.isArray(data.items)) {
-        setDetailItems(data.items);
+      const orderData = data.data ?? data.order ?? data;
+      const rawItems = orderData.items ?? orderData.order_items ?? orderData.chi_tiet_don_hang ?? [];
+
+      if (Array.isArray(rawItems)) {
+        setDetailItems(rawItems);
       } else {
         setDetailItems([]);
+      }
+
+      // Gộp thông tin chi tiết đầy đủ từ API vào selectedOrder
+      if (orderData && typeof orderData === 'object') {
+        setSelectedOrder(prev => ({
+          ...(prev || order),
+          ...orderData,
+          ho_ten: orderData.ten_nguoi_nhan || orderData.ho_ten || order.ho_ten,
+          so_dien_thoai: orderData.so_dien_thoai_nhan || orderData.so_dien_thoai || order.so_dien_thoai,
+          phi_van_chuyen: Number(orderData.phi_van_chuyen ?? order.phi_van_chuyen ?? 30000),
+          so_tien_giam_gia: Number(orderData.so_tien_giam_gia ?? order.so_tien_giam_gia ?? 0),
+          ma_giam_gia: orderData.ma_giam_gia ?? order.ma_giam_gia,
+          tong_tien_hang: Number(orderData.tong_tien_hang ?? order.tong_tien_hang ?? 0),
+          tong_thanh_toan: Number(orderData.tong_thanh_toan ?? order.tong_thanh_toan ?? 0),
+        }));
       }
     } catch (err) {
       console.error("Lỗi lấy chi tiết đơn hàng:", err);
@@ -283,6 +304,10 @@ export default function AdminOrdersScreen({ onBack }: { onBack: () => void }) {
     const norm = getNormStatus(item.trang_thai);
     const statusCfg = STATUS_CONFIG[norm] || STATUS_CONFIG.cho_xu_ly;
     const isProcessing = updatingId === item.id;
+    const subtotal = Number(item.tong_tien_hang || 0);
+    const discount = Number(item.so_tien_giam_gia || 0);
+    const shippingFee = Number(item.phi_van_chuyen ?? 30000);
+    const displayTotal = Number(item.tong_thanh_toan && Number(item.tong_thanh_toan) > subtotal ? item.tong_thanh_toan : (subtotal > 0 ? Math.max(0, subtotal - discount + shippingFee) : Number(item.tong_thanh_toan || 0)));
 
     return (
       <View style={styles.orderCard}>
@@ -323,11 +348,11 @@ export default function AdminOrdersScreen({ onBack }: { onBack: () => void }) {
               </TouchableOpacity>
             </View>
           )}
-          {item.ma_giam_gia && (
+          {(item.ma_giam_gia || discount > 0) && (
             <View style={styles.infoRow}>
               <Tag size={14} color="#E65100" />
               <Text style={[styles.infoText, { color: '#E65100', fontWeight: '600' }]}>
-                Voucher: {item.ma_giam_gia} (-{Number(item.so_tien_giam_gia || 0).toLocaleString('vi-VN')} đ)
+                Voucher: {item.ma_giam_gia || 'Đã áp dụng'} (-{discount.toLocaleString('vi-VN')} đ)
               </Text>
             </View>
           )}
@@ -351,7 +376,7 @@ export default function AdminOrdersScreen({ onBack }: { onBack: () => void }) {
           <View style={styles.amountContainer}>
             <Text style={styles.amountLabel}>Tổng thanh toán: </Text>
             <Text style={styles.amountValue}>
-              {Number(item.tong_thanh_toan || 0).toLocaleString('vi-VN')} đ
+              {displayTotal.toLocaleString('vi-VN')} đ
             </Text>
           </View>
         </View>
@@ -575,11 +600,20 @@ export default function AdminOrdersScreen({ onBack }: { onBack: () => void }) {
                 {selectedOrder?.email && <Text style={styles.detailText}>• Email: {selectedOrder.email}</Text>}
                 <Text style={styles.detailText}>• SĐT: {selectedOrder?.so_dien_thoai || 'Chưa cung cấp'}</Text>
                 <Text style={styles.detailText}>• Địa chỉ: {selectedOrder?.dia_chi_giao_hang || 'Chưa có địa chỉ'}</Text>
-                {selectedOrder?.ma_giam_gia && (
-                  <Text style={[styles.detailText, { color: '#E65100', fontWeight: '600' }]}>
-                    • Mã voucher: {selectedOrder.ma_giam_gia}
-                  </Text>
-                )}
+                <Text style={styles.detailText}>
+                  • Voucher: {selectedOrder?.ma_giam_gia ? (
+                    <Text style={{ color: '#E65100', fontWeight: 'bold' }}>{selectedOrder.ma_giam_gia}</Text>
+                  ) : Number(selectedOrder?.so_tien_giam_gia || 0) > 0 ? (
+                    <Text style={{ color: '#E65100', fontWeight: 'bold' }}>Đã áp dụng giảm giá</Text>
+                  ) : (
+                    <Text style={{ color: '#888' }}>Không áp dụng</Text>
+                  )}
+                  {Number(selectedOrder?.so_tien_giam_gia || 0) > 0 ? (
+                    <Text style={{ color: '#2E7D32', fontWeight: 'bold' }}>
+                      {` (-${Number(selectedOrder?.so_tien_giam_gia).toLocaleString('vi-VN')} đ)`}
+                    </Text>
+                  ) : ''}
+                </Text>
               </View>
 
               {/* Items List */}
@@ -588,51 +622,85 @@ export default function AdminOrdersScreen({ onBack }: { onBack: () => void }) {
                 {loadingDetail ? (
                   <ActivityIndicator size="small" color="#2E7D32" style={{ marginVertical: 15 }} />
                 ) : detailItems.length > 0 ? (
-                  detailItems.map((prod, idx) => (
-                    <View key={idx} style={styles.detailProductRow}>
-                      <Image
-                        source={resolveProductImage(prod.hinh_anh_url)}
-                        style={styles.detailProdImg}
-                      />
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.detailProdName} numberOfLines={2}>
-                          {prod.ten_san_pham || `Sản phẩm #${prod.product_id}`}
+                  detailItems.map((prod, idx) => {
+                    const unitPrice = Number(prod.gia_tien ?? prod.gia_luc_mua ?? prod.don_gia ?? prod.price ?? 0);
+                    const qty = Number(prod.so_luong || 1);
+                    const lineTotal = unitPrice * qty;
+
+                    return (
+                      <View key={prod.id ? `item-${prod.id}` : `idx-${idx}`} style={styles.detailProductRow}>
+                        <Image
+                          source={prod.hinh_anh_url ? resolveProductImage(prod.hinh_anh_url) : resolveProductImageByName(prod.ten_san_pham)}
+                          style={styles.detailProdImg}
+                        />
+                        <View style={{ flex: 1, paddingRight: 8 }}>
+                          <Text style={styles.detailProdName} numberOfLines={2}>
+                            {prod.ten_san_pham || `Sản phẩm #${prod.product_id}`}
+                          </Text>
+                          <Text style={styles.detailProdQty}>
+                            Số lượng: x{qty} • Đơn giá: {unitPrice.toLocaleString('vi-VN')} đ
+                          </Text>
+                        </View>
+                        <Text style={styles.detailProdPrice}>
+                          {lineTotal.toLocaleString('vi-VN')} đ
                         </Text>
-                        <Text style={styles.detailProdQty}>Số lượng: x{prod.so_luong}</Text>
                       </View>
-                      <Text style={styles.detailProdPrice}>
-                        {(prod.don_gia * prod.so_luong).toLocaleString('vi-VN')} đ
-                      </Text>
-                    </View>
-                  ))
+                    );
+                  })
                 ) : (
                   <Text style={styles.emptyItemsText}>Không có dữ liệu chi tiết sản phẩm.</Text>
                 )}
               </View>
 
               {/* Pricing breakdown */}
-              <View style={styles.pricingSection}>
-                <View style={styles.rowBetween}>
-                  <Text style={styles.priceLabel}>Tạm tính tiền hàng:</Text>
-                  <Text style={styles.priceVal}>
-                    {Number(selectedOrder?.tong_tien_hang || 0).toLocaleString('vi-VN')} đ
-                  </Text>
-                </View>
-                {Number(selectedOrder?.so_tien_giam_gia || 0) > 0 && (
-                  <View style={styles.rowBetween}>
-                    <Text style={styles.priceLabel}>Voucher giảm giá:</Text>
-                    <Text style={[styles.priceVal, { color: '#2E7D32' }]}>
-                      -{Number(selectedOrder?.so_tien_giam_gia).toLocaleString('vi-VN')} đ
-                    </Text>
+              {(() => {
+                const subtotal = Number(selectedOrder?.tong_tien_hang || 0);
+                const discount = Number(selectedOrder?.so_tien_giam_gia || 0);
+                const shippingFee = Number(selectedOrder?.phi_van_chuyen ?? 30000);
+                const total = Number(selectedOrder?.tong_thanh_toan && Number(selectedOrder.tong_thanh_toan) > subtotal ? selectedOrder.tong_thanh_toan : (subtotal > 0 ? Math.max(0, subtotal - discount + shippingFee) : Number(selectedOrder?.tong_thanh_toan || 0)));
+
+                return (
+                  <View style={styles.pricingSection}>
+                    <View style={styles.rowBetween}>
+                      <Text style={styles.priceLabel}>Tạm tính tiền hàng:</Text>
+                      <Text style={styles.priceVal}>
+                        {subtotal.toLocaleString('vi-VN')} đ
+                      </Text>
+                    </View>
+
+                    <View style={[styles.rowBetween, { marginTop: 6 }]}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Text style={styles.priceLabel}>Mã giảm giá:</Text>
+                        {selectedOrder?.ma_giam_gia ? (
+                          <View style={styles.couponBadge}>
+                            <Ticket size={11} color="#2E7D32" stroke="#2E7D32" />
+                            <Text style={styles.couponBadgeText}>{selectedOrder.ma_giam_gia}</Text>
+                          </View>
+                        ) : null}
+                      </View>
+                      <Text style={[styles.priceVal, discount > 0 ? { color: '#2E7D32', fontWeight: 'bold' } : {}]}>
+                        {discount > 0 ? `-${discount.toLocaleString('vi-VN')} đ` : '0 đ'}
+                      </Text>
+                    </View>
+
+                    <View style={[styles.rowBetween, { marginTop: 6 }]}>
+                      <Text style={styles.priceLabel}>Phí vận chuyển:</Text>
+                      <Text style={styles.priceVal}>
+                        {shippingFee.toLocaleString('vi-VN')} đ
+                      </Text>
+                    </View>
+
+                    <View style={styles.cardDivider} />
+
+                    <View style={[styles.rowBetween, { marginTop: 4 }]}>
+                      <Text style={styles.totalPriceLabel}>Tổng thanh toán:</Text>
+                      <Text style={styles.totalPriceVal}>
+                        {total.toLocaleString('vi-VN')} đ
+                      </Text>
+                    </View>
                   </View>
-                )}
-                <View style={[styles.rowBetween, { marginTop: 8 }]}>
-                  <Text style={styles.totalPriceLabel}>Tổng thanh toán:</Text>
-                  <Text style={styles.totalPriceVal}>
-                    {Number(selectedOrder?.tong_thanh_toan || 0).toLocaleString('vi-VN')} đ
-                  </Text>
-                </View>
-              </View>
+                );
+              })()}
 
               {/* Nút thao tác nhanh trong modal chi tiết */}
               {selectedOrder && (
@@ -916,5 +984,21 @@ const styles = StyleSheet.create({
   priceLabel: { fontSize: 13, color: '#666' },
   priceVal: { fontSize: 13, fontWeight: '600', color: '#333' },
   totalPriceLabel: { fontSize: 15, fontWeight: 'bold', color: '#222' },
-  totalPriceVal: { fontSize: 16, fontWeight: 'bold', color: '#D32F2F' }
+  totalPriceVal: { fontSize: 16, fontWeight: 'bold', color: '#D32F2F' },
+  couponBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#E8F5E9',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: '#C8E6C9',
+  },
+  couponBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#2E7D32',
+  }
 });

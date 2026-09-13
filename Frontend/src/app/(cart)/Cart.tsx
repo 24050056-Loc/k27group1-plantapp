@@ -18,12 +18,10 @@ import {
   getCart,
   removeFromCart,
   updateCartItemQuantity,
-  addToCart,
 } from "../../services/cartService";
 import { CartItem } from "../../types";
-import { STARTER_KITS, StarterKit } from "../../data/starterKits";
 import { baseUrl } from "../../api";
-import { resolveProductImageByName } from "../../assets/productImages";
+import { resolveProductImage, resolveProductImageByName } from "../../assets/productImages";
 
 import {
   ShoppingCart,
@@ -31,7 +29,6 @@ import {
   Plus,
   Minus,
   ChevronLeft,
-  Sparkles,
   Leaf,
   Check,
 } from "lucide-react-native";
@@ -154,19 +151,51 @@ function SwipeableCartItem({
         {/* Ảnh sản phẩm */}
         <View style={swipeStyles.imageContainer}>
           <Image
-            source={resolveProductImageByName(item.ten_san_pham)}
+            source={
+              item.hinh_anh_url && item.hinh_anh_url.startsWith("http")
+                ? { uri: item.hinh_anh_url }
+                : item.hinh_anh_url
+                ? resolveProductImage(item.hinh_anh_url)
+                : resolveProductImageByName(item.ten_san_pham)
+            }
             style={swipeStyles.productImage}
           />
         </View>
 
         {/* Thông tin sản phẩm */}
         <View style={swipeStyles.infoContainer}>
+          {item.is_combo && (
+            <View style={swipeStyles.comboBadge}>
+              <Text style={swipeStyles.comboBadgeText}>
+                {item.dac_tinh?.emoji || "🎁"} COMBO
+                {item.discount_percent ? ` -${item.discount_percent}%` : ""}
+              </Text>
+            </View>
+          )}
           <Text style={swipeStyles.productName} numberOfLines={2}>
             {item.ten_san_pham}
           </Text>
-          <Text style={swipeStyles.unitPrice}>
-            {price.toLocaleString("vi-VN")}đ / cái
-          </Text>
+
+          {item.combo_items && Array.isArray(item.combo_items) && item.combo_items.length > 0 ? (
+            <Text style={swipeStyles.comboItemsText} numberOfLines={2}>
+              {item.combo_items.join(" • ")}
+            </Text>
+          ) : item.mo_ta && item.is_combo ? (
+            <Text style={swipeStyles.comboItemsText} numberOfLines={2}>
+              {item.mo_ta}
+            </Text>
+          ) : null}
+
+          <View style={swipeStyles.priceWrap}>
+            {item.original_price && item.original_price > price ? (
+              <Text style={swipeStyles.originalPriceText}>
+                {Number(item.original_price).toLocaleString("vi-VN")}đ
+              </Text>
+            ) : null}
+            <Text style={swipeStyles.unitPrice}>
+              {price.toLocaleString("vi-VN")}đ {item.is_combo ? "/ combo" : "/ cái"}
+            </Text>
+          </View>
           <Text style={swipeStyles.lineTotal}>
             = {(price * item.so_luong).toLocaleString("vi-VN")}đ
           </Text>
@@ -204,70 +233,6 @@ function SwipeableCartItem({
   );
 }
 
-// ---- StarterKit Card ----
-type StarterKitCardProps = {
-  kit: StarterKit;
-  onAdd: (kit: StarterKit) => void;
-  isAdding: boolean;
-};
-
-function StarterKitCard({ kit, onAdd, isAdding }: StarterKitCardProps) {
-  return (
-    <View style={kitStyles.card}>
-      {/* Tag badge */}
-      <View style={[kitStyles.tag, { backgroundColor: kit.tagColor }]}>
-        <Text style={kitStyles.tagText}>{kit.tag}</Text>
-      </View>
-
-      {/* Discount badge */}
-      <View style={kitStyles.discountBadge}>
-        <Text style={kitStyles.discountText}>-{kit.discount}%</Text>
-      </View>
-
-      {/* Emoji icon */}
-      <Text style={kitStyles.emoji}>{kit.emoji}</Text>
-
-      <Text style={kitStyles.kitName}>{kit.name}</Text>
-      <Text style={kitStyles.kitDescription}>{kit.description}</Text>
-
-      {/* Item list */}
-      <View style={kitStyles.itemList}>
-        {kit.items.map((it, idx) => (
-          <Text key={`${kit.id ?? kit.name}-${it}-${idx}`} style={kitStyles.kitItem}>
-            {it}
-          </Text>
-        ))}
-      </View>
-
-      {/* Pricing */}
-      <View style={kitStyles.priceRow}>
-        <View>
-          <Text style={kitStyles.originalPrice}>
-            {kit.originalPrice.toLocaleString("vi-VN")}đ
-          </Text>
-          <Text style={kitStyles.salePrice}>
-            {kit.salePrice.toLocaleString("vi-VN")}đ
-          </Text>
-        </View>
-        <TouchableOpacity
-          style={kitStyles.addButton}
-          onPress={() => onAdd(kit)}
-          disabled={isAdding}
-        >
-          {isAdding ? (
-            <ActivityIndicator size="small" color="#fff" />
-          ) : (
-            <>
-              <Plus size={14} stroke="#fff" />
-              <Text style={kitStyles.addButtonText}>Thêm vào giỏ</Text>
-            </>
-          )}
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
-}
-
 // ---- Main Cart Screen ----
 type Props = {
   onBack: () => void;
@@ -282,7 +247,6 @@ export default function CartScreen({ onBack, onCheckout }: Props) {
   const [loading, setLoading] = useState(true);
   const [updatingId, setUpdatingId] = useState<number | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
-  const [addingKitId, setAddingKitId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [isDeleting, setIsDeleting] = useState(false);
 
@@ -426,24 +390,6 @@ export default function CartScreen({ onBack, onCheckout }: Props) {
     } finally {
       setUpdatingId(null);
     }
-  };
-
-  const handleAddStarterKit = async (kit: StarterKit) => {
-    if (!token) {
-      Alert.alert(
-        "Yêu cầu đăng nhập",
-        "Bạn cần đăng nhập để thêm vào giỏ hàng."
-      );
-      return;
-    }
-    setAddingKitId(kit.id);
-    // Giả lập thêm combo — trong thực tế sẽ gọi API riêng cho combo
-    await new Promise((r) => setTimeout(r, 900));
-    setAddingKitId(null);
-    Alert.alert(
-      "🎉 Đã thêm Combo!",
-      `"${kit.name}" đã được thêm vào giỏ hàng của bạn.`
-    );
   };
 
   const subtotal = cartItems.reduce(
@@ -598,30 +544,6 @@ export default function CartScreen({ onBack, onCheckout }: Props) {
               </TouchableOpacity>
             </View>
           )}
-
-          {/* ---- Starter Kit Upsell Section ---- */}
-          <View style={styles.section}>
-            <View style={styles.starterKitHeader}>
-              <View style={styles.starterKitTitleRow}>
-                <Sparkles size={18} stroke="#F4A261" />
-                <Text style={styles.starterKitTitle}>
-                  Gói Combo Starter Kit
-                </Text>
-              </View>
-              <Text style={styles.starterKitSubtitle}>
-                Tiết kiệm hơn khi mua combo – Cây giống + Đất trồng + Chậu cảnh
-              </Text>
-            </View>
-
-            {STARTER_KITS.map((kit) => (
-              <StarterKitCard
-                key={kit.id}
-                kit={kit}
-                onAdd={handleAddStarterKit}
-                isAdding={addingKitId === kit.id}
-              />
-            ))}
-          </View>
 
           {/* Bottom spacer */}
           <View style={{ height: 32 }} />
@@ -873,27 +795,6 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     fontSize: 14,
   },
-  // Starter Kit section header
-  starterKitHeader: {
-    backgroundColor: "linear-gradient(135deg, #EDF3E8, #fff)",
-    marginBottom: 16,
-  },
-  starterKitTitleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 4,
-  },
-  starterKitTitle: {
-    fontSize: 17,
-    fontWeight: "700",
-    color: "#1A2E1A",
-    marginLeft: 8,
-  },
-  starterKitSubtitle: {
-    fontSize: 13,
-    color: "#6B7F6B",
-    lineHeight: 18,
-  },
 });
 
 // Swipeable item styles
@@ -983,6 +884,39 @@ const swipeStyles = StyleSheet.create({
     lineHeight: 20,
     marginBottom: 4,
   },
+  comboBadge: {
+    alignSelf: "flex-start",
+    backgroundColor: "#E8F5E9",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginBottom: 4,
+    borderWidth: 1,
+    borderColor: "#A5D6A7",
+  },
+  comboBadgeText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#2E7D32",
+  },
+  comboItemsText: {
+    fontSize: 11,
+    color: "#4E6B4E",
+    marginBottom: 4,
+    fontStyle: "italic",
+    lineHeight: 15,
+  },
+  priceWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 2,
+  },
+  originalPriceText: {
+    fontSize: 11,
+    color: "#999",
+    textDecorationLine: "line-through",
+  },
   unitPrice: {
     fontSize: 12,
     color: "#6B7F6B",
@@ -1017,116 +951,5 @@ const swipeStyles = StyleSheet.create({
     color: "#1A2E1A",
     minWidth: 28,
     textAlign: "center",
-  },
-});
-
-// Starter Kit card styles
-const kitStyles = StyleSheet.create({
-  card: {
-    backgroundColor: "#fff",
-    borderRadius: 20,
-    padding: 18,
-    marginBottom: 14,
-    borderWidth: 1,
-    borderColor: "rgba(46,125,50,0.12)",
-    shadowColor: "#2E7D32",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.07,
-    shadowRadius: 10,
-    elevation: 3,
-    position: "relative",
-  },
-  tag: {
-    position: "absolute",
-    top: 14,
-    left: 14,
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-  },
-  tagText: {
-    color: "#fff",
-    fontSize: 11,
-    fontWeight: "700",
-  },
-  discountBadge: {
-    position: "absolute",
-    top: 14,
-    right: 14,
-    backgroundColor: "#FFF3E0",
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
-  discountText: {
-    color: "#E65100",
-    fontWeight: "700",
-    fontSize: 12,
-  },
-  emoji: {
-    fontSize: 40,
-    marginTop: 32,
-    marginBottom: 10,
-  },
-  kitName: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#1A2E1A",
-    marginBottom: 4,
-  },
-  kitDescription: {
-    fontSize: 13,
-    color: "#6B7F6B",
-    lineHeight: 18,
-    marginBottom: 12,
-  },
-  itemList: {
-    backgroundColor: "#F8FAF5",
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 14,
-    gap: 4,
-  },
-  kitItem: {
-    fontSize: 13,
-    color: "#2E7D32",
-    fontWeight: "500",
-    paddingVertical: 1,
-  },
-  priceRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "flex-end",
-  },
-  originalPrice: {
-    fontSize: 13,
-    color: "#aaa",
-    textDecorationLine: "line-through",
-    marginBottom: 2,
-  },
-  salePrice: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: "#2E7D32",
-  },
-  addButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#2E7D32",
-    borderRadius: 14,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    gap: 6,
-    shadowColor: "#2E7D32",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  addButtonText: {
-    color: "#fff",
-    fontWeight: "700",
-    fontSize: 13,
-    marginLeft: 4,
   },
 });

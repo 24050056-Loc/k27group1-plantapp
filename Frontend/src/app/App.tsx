@@ -309,7 +309,11 @@ function AppContent() {
               {renderMainContent()}
             </View>
           ) : (
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={styles.scrollContent}
+            >
               {renderMainContent()}
             </ScrollView>
           )}

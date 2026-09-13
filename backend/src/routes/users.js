@@ -5,6 +5,7 @@ const usersController = require('../Controller/usersController.js');
 const authenticateToken = require('../middlewares/authMiddleware.js');
 const multer = require('multer');
 const fs = require('fs');
+const path = require('path');
 const { authorize, uploadRealFileToFolder, uploadFileToDrive } = require('../../ggdrive.js');
 
 const upload = multer({ dest: 'uploads/' });
@@ -170,39 +171,70 @@ router.put('/:id', async (req, res) => {
     }
 });
 
-// Upload avatar người dùng lên Google Drive và lưu URL vào Database
+// Upload avatar người dùng (Google Drive hoặc Local Storage Fallback an toàn)
 router.post('/:id/avatar', upload.single('avatar'), async (req, res) => {
     try {
         const userId = req.params.id;
         if (!req.file) {
-            return res.status(400).json({ message: "Không có file nào được upload" });
+            return res.status(400).json({ success: false, message: "Không có file nào được upload" });
         }
 
-        // Upload trực tiếp file lên Google Drive qua helper
-        const fileData = await uploadFileToDrive(req.file.path);
+        let avatarUrl = null;
 
-        // Xóa file tạm local sau khi upload thành công
+        // 1. Thử upload lên Google Drive
+        try {
+            const fileData = await uploadFileToDrive(req.file.path);
+            if (fileData && fileData.webViewLink) {
+                avatarUrl = fileData.webViewLink;
+                console.log(`✅ Đã upload avatar User ${userId} lên Google Drive thành công!`);
+            }
+        } catch (driveError) {
+            console.warn(`⚠️ Google Drive chưa sẵn sàng (${driveError.message}). Chuyển sang lưu trữ Local an toàn.`);
+        }
+
+        // 2. Nếu Google Drive chưa ủy quyền hoặc lỗi, fallback lưu trữ vào local server
+        if (!avatarUrl) {
+            const ext = path.extname(req.file.originalname) || '.jpg';
+            const newFileName = `avatar_${userId}_${Date.now()}${ext}`;
+            const targetDir = path.join(__dirname, '../../uploads/avatars');
+            if (!fs.existsSync(targetDir)) {
+                fs.mkdirSync(targetDir, { recursive: true });
+            }
+            const destinationPath = path.join(targetDir, newFileName);
+            
+            // Sao chép file tạm sang thư mục lưu trữ avatar chính thức
+            fs.copyFileSync(req.file.path, destinationPath);
+
+            const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+            const host = req.get('host') || 'localhost:8080';
+            avatarUrl = `${protocol}://${host}/uploads/avatars/${newFileName}`;
+            console.log(`✅ Đã lưu avatar User ${userId} vào Server Local: ${avatarUrl}`);
+        }
+
+        // 3. Dọn dẹp file tạm của Multer
         if (fs.existsSync(req.file.path)) {
             fs.unlinkSync(req.file.path);
         }
 
-        if (!fileData || !fileData.webViewLink) {
-            return res.status(500).json({ message: "Lỗi khi upload lên Google Drive" });
-        }
-
-        const avatarUrl = fileData.webViewLink;
-
-        // Lưu link avatar vào database
+        // 4. Cập nhật đường dẫn avatar vào cơ sở dữ liệu
         const sql = `UPDATE users SET avatar = ? WHERE id = ?`;
         await pool.execute(sql, [avatarUrl, userId]);
 
-        res.json({ success: true, message: "Upload avatar thành công", avatarUrl });
+        return res.json({ 
+            success: true, 
+            message: "Upload avatar thành công", 
+            avatarUrl 
+        });
+
     } catch (error) {
         console.error("Lỗi upload avatar:", error);
         if (req.file && fs.existsSync(req.file.path)) {
             fs.unlinkSync(req.file.path);
         }
-        res.status(500).json({ success: false, message: 'Lỗi upload avatar', error: error.message });
+        return res.status(500).json({ 
+            success: false, 
+            message: 'Lỗi upload avatar: ' + error.message 
+        });
     }
 });
 

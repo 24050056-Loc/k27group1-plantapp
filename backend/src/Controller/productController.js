@@ -38,6 +38,33 @@ const productController = {
         }
     },
 
+    // 2.5 API TÌM KIẾM SẢN PHẨM (Khách hàng — gợi ý realtime theo từ khóa)
+    searchProducts: async (req, res) => {
+        try {
+            const keyword = (req.query.q || '').trim();
+            if (!keyword) {
+                return res.json([]);
+            }
+            const searchTerm = `%${keyword}%`;
+            const query = `
+                SELECT p.*, c.ten_danh_muc as category_name 
+                FROM products p 
+                LEFT JOIN categories c ON p.category_id = c.id 
+                WHERE p.dang_kinh_doanh = 1 
+                  AND (p.ten_san_pham LIKE ? OR p.mo_ta LIKE ? OR c.ten_danh_muc LIKE ?)
+                ORDER BY 
+                    CASE WHEN p.ten_san_pham LIKE ? THEN 0 ELSE 1 END,
+                    p.ten_san_pham ASC
+                LIMIT 10
+            `;
+            const [rows] = await pool.execute(query, [searchTerm, searchTerm, searchTerm, `${keyword}%`]);
+            res.json(rows);
+        } catch (error) {
+            console.error("Lỗi tìm kiếm sản phẩm:", error);
+            res.status(500).json({ message: "Lỗi tìm kiếm sản phẩm" });
+        }
+    },
+
     // 3. Admin: Thêm sản phẩm mới
     addPlant: async (req, res) => {
         const { ten_san_pham, gia_tien, so_luong_kho, category_id, hinh_anh_url, dang_kinh_doanh } = req.body;

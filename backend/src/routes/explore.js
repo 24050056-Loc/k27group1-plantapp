@@ -4,30 +4,110 @@ const pool = require('../db');
 const multer = require('multer');
 const fs = require('fs');
 const path = require('path');
+const jwt = require('jsonwebtoken');
+const authenticateToken = require('../middlewares/authMiddleware');
 
-// Multer setup cho upload ảnh
-const upload = multer({ dest: 'uploads/' });
+// =========================================================================
+// CẤU HÌNH MULTER LƯU ẢNH TRỰC TIẾP TRÊN SERVER LOCAL (uploads/posts)
+// =========================================================================
+const POSTS_UPLOAD_DIR = path.join(__dirname, '../../uploads/posts');
+if (!fs.existsSync(POSTS_UPLOAD_DIR)) {
+    fs.mkdirSync(POSTS_UPLOAD_DIR, { recursive: true });
+}
 
-// Thử require ggdrive helper nếu có
-let uploadFileToDrive = null;
-try {
-    const ggdrive = require('../../ggdrive.js');
-    uploadFileToDrive = ggdrive.uploadFileToDrive;
-} catch (e) {
-    console.log("ℹ️ ggdrive helper chưa sẵn sàng hoặc không tìm thấy:", e.message);
+const storage = multer.diskStorage({
+    destination: function (req, file, cb) {
+        cb(null, POSTS_UPLOAD_DIR);
+    },
+    filename: function (req, file, cb) {
+        const userId = req.user?.id || 'anon';
+        const ext = path.extname(file.originalname).toLowerCase() || '.jpg';
+        const uniqueSuffix = `${Date.now()}_${Math.round(Math.random() * 1e6)}`;
+        cb(null, `post_${userId}_${uniqueSuffix}${ext}`);
+    }
+});
+
+const fileFilter = (req, file, cb) => {
+    const allowedMime = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'];
+    if (allowedMime.includes(file.mimetype) || file.mimetype.startsWith('image/')) {
+        cb(null, true);
+    } else {
+        cb(new Error('Chỉ chấp nhận file hình ảnh (jpg, jpeg, png, webp)'), false);
+    }
+};
+
+const upload = multer({
+    storage: storage,
+    limits: { fileSize: 10 * 1024 * 1024 }, // Tối đa 10MB/ảnh
+    fileFilter: fileFilter
+});
+
+// Helper chuẩn hóa URL hình ảnh (loại bỏ localhost, ghép baseUrl truy cập được từ Mobile LAN)
+function resolveImageUrl(req, urlOrPath) {
+    if (!urlOrPath) return null;
+    const trimmed = String(urlOrPath).trim();
+    if (!trimmed) return null;
+
+    const protocol = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+    const host = req.get('host') || '192.168.190.239:8080';
+
+    // Nếu là đường dẫn tương đối của uploads
+    if (trimmed.startsWith('/uploads') || trimmed.startsWith('uploads')) {
+        const cleanPath = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+        return `${protocol}://${host}${cleanPath}`;
+    }
+
+    // Nếu chứa localhost hoặc 127.0.0.1, thay bằng host thực tế hiện tại
+    if (trimmed.includes('localhost:') || trimmed.includes('127.0.0.1:')) {
+        return trimmed.replace(/http:\/\/(localhost|127\.0\.0\.1):\d+/, `${protocol}://${host}`);
+    }
+
+    return trimmed;
+}
+
+// Helper lấy user ID hiện tại từ Authorization header nếu có (không bắt buộc đăng nhập để xem)
+function getOptionalUserId(req) {
+    try {
+        const authHeader = req.headers['authorization'];
+        let token = authHeader && authHeader.split(' ')[1];
+        if (token && token.startsWith('"') && token.endsWith('"')) {
+            token = token.slice(1, -1);
+        }
+        if (!token) {
+            return req.query.user_id ? parseInt(req.query.user_id) : 0;
+        }
+        const secretKey = process.env.SECRET_KEY || 'YOUR_SECRET_KEY';
+        const decoded = jwt.verify(token, secretKey);
+        return decoded?.id || 0;
+    } catch {
+        return req.query.user_id ? parseInt(req.query.user_id) : 0;
+    }
+}
+
+// Helper tính khoảng thời gian đăng bài (VD: "2 giờ trước", "5 phút trước")
+function formatTimeAgo(dateStr) {
+    if (!dateStr) return 'Vừa xong';
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffInSeconds = Math.floor((now - date) / 1000);
+
+    if (diffInSeconds < 60) return 'Vừa xong';
+    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)} phút trước`;
+    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)} giờ trước`;
+    if (diffInSeconds < 172800) return 'Hôm qua';
+    if (diffInSeconds < 2592000) return `${Math.floor(diffInSeconds / 86400)} ngày trước`;
+    return date.toLocaleDateString('vi-VN');
 }
 
 // =========================================================================
-// KHỞI TẠO BẢNG TỰ ĐỘNG NẾU CHƯA TỒN TẠI (AUTO TABLE MIGRATION & SEED)
+// KHỞI TẠO BẢNG TỰ ĐỘNG NẾU CHƯA TỒN TẠI (AUTO TABLE MIGRATION)
 // =========================================================================
 async function initExploreTables() {
     try {
         // Tự động bổ sung cột avatar vào bảng users nếu chưa có
         try {
             await pool.query(`ALTER TABLE users ADD COLUMN avatar VARCHAR(500) NULL`);
-        } catch (e) {
-            // Cột avatar đã tồn tại, bỏ qua lỗi
-        }
+        } catch {}
 
         // Bảng Bài viết Khám Phá
         await pool.query(`
@@ -64,101 +144,36 @@ async function initExploreTables() {
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 post_id INT NOT NULL,
                 user_id INT NOT NULL,
+                parent_id INT NULL DEFAULT NULL,
                 content TEXT NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
         `);
 
-        // Kiểm tra xem bảng explore_posts đã có dữ liệu chưa, nếu chưa thì chèn dữ liệu mẫu
-        const [rows] = await pool.query('SELECT COUNT(*) as count FROM explore_posts');
-        if (rows[0].count === 0) {
-            console.log("🌱 Đang khởi tạo dữ liệu mẫu cho trang Khám Phá...");
-            const samplePosts = [
-                [
-                    1,
-                    'danh_gia_hot',
-                    'Sen Đá Ngọc Bích (Jade Plant)',
-                    5,
-                    'Cây nhận được tươi xanh và mộng nước lắm mọi người ơi! Đóng gói cực kỳ cẩn thận, có kèm cả hướng dẫn tưới nước nữa. Sẽ tiếp tục ủng hộ shop...',
-                    JSON.stringify([
-                        'https://images.unsplash.com/photo-1509423350716-97f9360b4e09?auto=format&fit=crop&w=600&q=80',
-                        'https://images.unsplash.com/photo-1459411552884-841db9b3cc2a?auto=format&fit=crop&w=600&q=80'
-                    ]),
-                    24,
-                    3,
-                    1
-                ],
-                [
-                    1,
-                    'khoe_cay',
-                    'Cây Bàng Đài Loan',
-                    5,
-                    'Góc ban công xanh mát vừa được trang hoàng thêm cây bàng lá nhỏ. Cây khỏe, phát triển rất nhanh luôn nha mọi người!',
-                    JSON.stringify([
-                        'https://images.unsplash.com/photo-1545241047-6083a3684587?auto=format&fit=crop&w=600&q=80'
-                    ]),
-                    45,
-                    8,
-                    1
-                ],
-                [
-                    1,
-                    'meo_cham_cay',
-                    'Lưỡi Hổ Thái',
-                    5,
-                    'Mẹo nhỏ cho các bạn mới trồng Lưỡi Hổ: Không nên tưới quá nhiều nước, 1-2 tuần tưới 1 lần là cây sống rất khỏe và lọc không khí cực tốt nha!',
-                    JSON.stringify([
-                        'https://images.unsplash.com/photo-1512428559087-560fa5ceab42?auto=format&fit=crop&w=600&q=80'
-                    ]),
-                    89,
-                    12,
-                    0
-                ]
-            ];
+        // Thêm cột parent_id cho explore_comments nếu chưa có
+        try {
+            await pool.query(`ALTER TABLE explore_comments ADD COLUMN parent_id INT NULL DEFAULT NULL`);
+        } catch {}
 
-            const insertSql = `
-                INSERT INTO explore_posts 
-                (user_id, category_tag, plant_name, rating, content, images, likes_count, comments_count, da_mua_hang) 
-                VALUES ?
-            `;
-            await pool.query(insertSql, [samplePosts]);
-            console.log("✅ Đã tạo dữ liệu mẫu thành công cho Khám Phá!");
-        }
     } catch (err) {
-        console.error("❌ Lỗi khởi tạo bảng Khám Phá (explore):", err.message);
+        console.error("❌ Lỗi khởi tạo bảng Khám Phá:", err.message);
     }
 }
 
-// Gọi khởi tạo bảng khi nạp file
 const initPromise = initExploreTables();
-
-// Helper tính khoảng thời gian đăng bài (VD: "2 giờ trước", "5 phút trước")
-function formatTimeAgo(dateStr) {
-    if (!dateStr) return '';
-    const date = new Date(dateStr);
-    const now = new Date();
-    const diffInSeconds = Math.floor((now - date) / 1000);
-
-    if (diffInSeconds < 60) return 'Vừa xong';
-    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)} phút trước`;
-    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)} giờ trước`;
-    if (diffInSeconds < 2592000) return `${Math.floor(diffInSeconds / 86400)} ngày trước`;
-    return date.toLocaleDateString('vi-VN');
-}
 
 // Danh mục tab Khám Phá
 const CATEGORIES = [
     { id: 'tat_ca', name: 'Tất cả' },
     { id: 'danh_gia_hot', name: 'Đánh giá hot' },
     { id: 'khoe_cay', name: 'Khoe cây 🌿' },
-    { id: 'meo_cham_cay', name: 'Mẹo chăm cây' }
+    { id: 'meo_cham_cay', name: 'Mẹo chăm sóc' }
 ];
 
-// Map tên hiển thị tag
 const TAG_MAP = {
     'danh_gia_hot': 'Đánh giá hot',
     'khoe_cay': 'Khoe cây 🌿',
-    'meo_cham_cay': 'Mẹo chăm cây'
+    'meo_cham_cay': 'Mẹo chăm sóc'
 };
 
 // =========================================================================
@@ -167,7 +182,6 @@ const TAG_MAP = {
 
 /**
  * 1. GET /explore/categories
- * Lấy danh sách các tab/danh mục lọc bài viết trên trang Khám phá
  */
 router.get('/categories', (req, res) => {
     res.json({
@@ -178,22 +192,27 @@ router.get('/categories', (req, res) => {
 
 /**
  * 2. GET /explore/posts
- * Lấy danh sách tất cả bài viết khám phá (Có lọc theo danh mục, từ khóa tìm kiếm)
- * Query params: category, search, user_id, page, limit
+ * Lấy danh sách bài viết từ MySQL kèm thông tin User thật & like state
  */
 router.get('/posts', async (req, res) => {
     await initPromise;
     try {
-        const { category, search, user_id, page = 1, limit = 20 } = req.query;
-        const offset = (parseInt(page) - 1) * parseInt(limit);
+        const { category, search, page = 1, limit = 20 } = req.query;
+        const currentUserId = getOptionalUserId(req);
+        const offset = (Math.max(1, parseInt(page)) - 1) * parseInt(limit);
 
         let whereConditions = [];
         let queryParams = [];
 
         // Lọc theo category
-        if (category && category !== 'tat_ca') {
+        if (category && category !== 'tat_ca' && category !== 'Tất cả') {
+            let catSlug = category;
+            if (category === 'Đánh giá hot') catSlug = 'danh_gia_hot';
+            else if (category === 'Khoe cây 🌿' || category === 'khoe_cay') catSlug = 'khoe_cay';
+            else if (category === 'Mẹo chăm cây' || category === 'Mẹo chăm sóc' || category === 'meo_cham_cay') catSlug = 'meo_cham_cay';
+
             whereConditions.push('p.category_tag = ?');
-            queryParams.push(category);
+            queryParams.push(catSlug);
         }
 
         // Lọc theo từ khóa tìm kiếm
@@ -205,8 +224,6 @@ router.get('/posts', async (req, res) => {
 
         const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
 
-        // Query lấy danh sách bài viết kèm thông tin người dùng và trạng thái like
-        const currentUserId = user_id ? parseInt(user_id) : 0;
         const sql = `
             SELECT 
                 p.id,
@@ -236,7 +253,7 @@ router.get('/posts', async (req, res) => {
         const finalParams = [currentUserId, ...queryParams, parseInt(limit), offset];
         const [rows] = await pool.query(sql, finalParams);
 
-        // Format lại dữ liệu trả về cho chuẩn FE
+        // Format chuẩn cho Frontend
         const formattedData = rows.map(post => {
             let parsedImages = [];
             try {
@@ -249,18 +266,28 @@ router.get('/posts', async (req, res) => {
                 parsedImages = post.images ? [post.images] : [];
             }
 
+            // Chuẩn hóa URL cho từng ảnh bài viết
+            const resolvedImages = (Array.isArray(parsedImages) ? parsedImages : [])
+                .map(img => resolveImageUrl(req, img))
+                .filter(Boolean);
+
             return {
                 id: post.id,
                 user_id: post.user_id,
                 author_name: post.author_name,
-                author_avatar: post.author_avatar || null,
+                author_avatar: resolveImageUrl(req, post.author_avatar),
                 da_mua_hang: Boolean(post.da_mua_hang),
-                category_tag: post.category_tag,
-                category_label: TAG_MAP[post.category_tag] || 'Bài viết',
+                category_tag: TAG_MAP[post.category_tag] || post.category_tag || 'Khám phá',
                 plant_name: post.plant_name,
                 rating: post.rating || 5,
                 content: post.content,
-                images: parsedImages,
+                images: resolvedImages,
+                media: resolvedImages.map((url, idx) => ({
+                    id: idx + 1,
+                    review_id: post.id,
+                    loai_media: 'hinh_anh',
+                    media_url: url
+                })),
                 likes_count: post.likes_count || 0,
                 comments_count: post.comments_count || 0,
                 is_liked: Boolean(post.is_liked),
@@ -276,8 +303,8 @@ router.get('/posts', async (req, res) => {
             limit: parseInt(limit)
         });
     } catch (error) {
-        console.error("Lỗi lấy danh sách bài viết Khám Phá:", error);
-        res.status(500).json({ success: false, message: "Lỗi Server", error: error.message });
+        console.error("❌ Lỗi lấy danh sách bài viết Khám Phá:", error);
+        res.status(500).json({ success: false, message: "Lỗi kết nối cơ sở dữ liệu", error: error.message });
     }
 });
 
@@ -289,8 +316,7 @@ router.get('/posts/:id', async (req, res) => {
     await initPromise;
     try {
         const { id } = req.params;
-        const { user_id } = req.query;
-        const currentUserId = user_id ? parseInt(user_id) : 0;
+        const currentUserId = getOptionalUserId(req);
 
         const sql = `
             SELECT 
@@ -329,22 +355,31 @@ router.get('/posts/:id', async (req, res) => {
             } else if (Array.isArray(post.images)) {
                 parsedImages = post.images;
             }
-        } catch (e) {
+        } catch {
             parsedImages = post.images ? [post.images] : [];
         }
+
+        const resolvedImages = (Array.isArray(parsedImages) ? parsedImages : [])
+            .map(img => resolveImageUrl(req, img))
+            .filter(Boolean);
 
         const formattedPost = {
             id: post.id,
             user_id: post.user_id,
             author_name: post.author_name,
-            author_avatar: post.author_avatar || null,
+            author_avatar: resolveImageUrl(req, post.author_avatar),
             da_mua_hang: Boolean(post.da_mua_hang),
-            category_tag: post.category_tag,
-            category_label: TAG_MAP[post.category_tag] || 'Bài viết',
+            category_tag: TAG_MAP[post.category_tag] || post.category_tag || 'Khám phá',
             plant_name: post.plant_name,
             rating: post.rating || 5,
             content: post.content,
-            images: parsedImages,
+            images: resolvedImages,
+            media: resolvedImages.map((url, idx) => ({
+                id: idx + 1,
+                review_id: post.id,
+                loai_media: 'hinh_anh',
+                media_url: url
+            })),
             likes_count: post.likes_count || 0,
             comments_count: post.comments_count || 0,
             is_liked: Boolean(post.is_liked),
@@ -354,136 +389,150 @@ router.get('/posts/:id', async (req, res) => {
 
         res.json({ success: true, data: formattedPost });
     } catch (error) {
-        console.error("Lỗi lấy chi tiết bài viết:", error);
+        console.error("❌ Lỗi lấy chi tiết bài viết:", error);
         res.status(500).json({ success: false, message: "Lỗi Server", error: error.message });
     }
 });
 
+/**
+ * 4. POST /explore/posts (Tạo bài viết mới kèm upload ảnh bằng Multer, Bắt buộc JWT)
+ */
 const postHandler = async (req, res) => {
     await initPromise;
     try {
-        const { user_id, category_tag, plant_name, rating, content, image_urls, noi_dung, so_sao } = req.body;
+        const userId = req.user.id;
+        const { category_tag, plant_name, rating, content, noi_dung, so_sao } = req.body;
 
-        const finalUserId = user_id || req.body.userId || 1;
         const finalContent = content || noi_dung;
         const finalRating = rating || so_sao || 5;
 
         if (!finalContent || !finalContent.trim()) {
-            return res.status(400).json({ success: false, message: "Thiếu nội dung bài viết" });
+            return res.status(400).json({ success: false, message: "Vui lòng nhập nội dung bài viết" });
         }
 
+        // Xử lý các file đã được Multer lưu vào backend/uploads/posts
         let uploadedImages = [];
-
-        // Nếu gửi sẵn link ảnh dạng chuỗi/mảng JSON
-        if (image_urls) {
-            try {
-                uploadedImages = typeof image_urls === 'string' ? JSON.parse(image_urls) : image_urls;
-            } catch (e) {
-                uploadedImages = [image_urls];
-            }
-        }
-
-        // Nếu có upload file từ client
         if (req.files && req.files.length > 0) {
-            for (const file of req.files) {
-                if (uploadFileToDrive) {
-                    try {
-                        const driveData = await uploadFileToDrive(file.path);
-                        if (driveData && driveData.webViewLink) {
-                            uploadedImages.push(driveData.webViewLink);
-                        }
-                    } catch (driveErr) {
-                        console.error("Lỗi upload file lên Google Drive:", driveErr.message);
-                    }
-                }
-                // Xóa file tạm
-                if (fs.existsSync(file.path)) {
-                    fs.unlinkSync(file.path);
-                }
-            }
+            uploadedImages = req.files.map(file => `/uploads/posts/${file.filename}`);
+        } else if (req.file) {
+            uploadedImages = [`/uploads/posts/${req.file.filename}`];
         }
 
-        let categoryTag = category_tag || 'khoe_cay';
-        if (categoryTag === 'Khoe cây 🌿' || categoryTag === 'khoe_cay') categoryTag = 'khoe_cay';
-        else if (categoryTag === 'Đánh giá hot' || categoryTag === 'danh_gia_hot') categoryTag = 'danh_gia_hot';
-        else if (categoryTag === 'Mẹo chăm cây' || categoryTag === 'Mẹo chăm sóc' || categoryTag === 'meo_cham_cay') categoryTag = 'meo_cham_cay';
+        // Nếu client có truyền mảng ảnh có sẵn (ví dụ url)
+        if (req.body.images) {
+            try {
+                const extraImgs = typeof req.body.images === 'string' ? JSON.parse(req.body.images) : req.body.images;
+                if (Array.isArray(extraImgs)) {
+                    uploadedImages.push(...extraImgs);
+                }
+            } catch {}
+        }
 
-        let daMuaHang = true;
+        let categoryTag = 'khoe_cay';
+        if (category_tag === 'Đánh giá hot' || category_tag === 'danh_gia_hot') categoryTag = 'danh_gia_hot';
+        else if (category_tag === 'Mẹo chăm cây' || category_tag === 'Mẹo chăm sóc' || category_tag === 'meo_cham_cay') categoryTag = 'meo_cham_cay';
+        else if (category_tag === 'Khoe cây 🌿' || category_tag === 'khoe_cay') categoryTag = 'khoe_cay';
 
         const insertSql = `
             INSERT INTO explore_posts 
             (user_id, category_tag, plant_name, rating, content, images, da_mua_hang) 
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, 1)
         `;
 
         const [result] = await pool.query(insertSql, [
-            finalUserId,
+            userId,
             categoryTag,
             plant_name || null,
             parseInt(finalRating),
             finalContent.trim(),
-            JSON.stringify(uploadedImages),
-            daMuaHang
+            JSON.stringify(uploadedImages)
         ]);
 
         const newPostId = result.insertId;
 
+        // Lấy thông tin user đăng bài để trả về ngay cho Frontend
+        const [userRows] = await pool.query('SELECT id, ho_ten, ten_dang_nhap, avatar FROM users WHERE id = ?', [userId]);
+        const author = userRows[0] || {};
+        const authorName = author.ho_ten || author.ten_dang_nhap || 'Bạn';
+        const authorAvatar = resolveImageUrl(req, author.avatar);
+
+        const resolvedImages = uploadedImages.map(img => resolveImageUrl(req, img));
+
+        const responsePost = {
+            id: newPostId,
+            user_id: userId,
+            author_name: authorName,
+            author_avatar: authorAvatar,
+            da_mua_hang: true,
+            category_tag: TAG_MAP[categoryTag] || 'Khám phá',
+            plant_name: plant_name || null,
+            rating: parseInt(finalRating),
+            content: finalContent.trim(),
+            images: resolvedImages,
+            media: resolvedImages.map((url, idx) => ({
+                id: idx + 1,
+                review_id: newPostId,
+                loai_media: 'hinh_anh',
+                media_url: url
+            })),
+            likes_count: 0,
+            comments_count: 0,
+            is_liked: false,
+            created_at: new Date().toISOString(),
+            created_at_formatted: 'Vừa xong'
+        };
+
         res.json({
             success: true,
-            id: newPostId,
-            postId: newPostId,
-            message: "Đăng bài thành công!",
-            images: uploadedImages
+            message: "Đăng bài viết thành công!",
+            data: responsePost
         });
 
     } catch (error) {
-        console.error("Lỗi đăng bài Khám Phá:", error);
-        if (req.files) {
-            req.files.forEach(f => {
-                if (fs.existsSync(f.path)) fs.unlinkSync(f.path);
-            });
-        }
-        res.status(500).json({ success: false, message: "Lỗi Server", error: error.message });
+        console.error("❌ Lỗi đăng bài Khám Phá:", error);
+        res.status(500).json({ success: false, message: "Lỗi đăng bài viết", error: error.message });
     }
 };
 
-router.post('/posts', upload.any(), postHandler);
-router.post('/', upload.any(), postHandler);
+router.post('/posts', authenticateToken, upload.array('photos', 5), postHandler);
+router.post('/', authenticateToken, upload.array('photos', 5), postHandler);
 
 /**
- * 5. POST /explore/posts/:id/like
- * Thích / Bỏ thích bài viết (Toggle Like)
+ * 5. POST /explore/posts/:id/like (Bắt buộc JWT)
+ * Toggle Like/Unlike
  */
-router.post('/posts/:id/like', async (req, res) => {
+router.post('/posts/:id/like', authenticateToken, async (req, res) => {
     await initPromise;
     try {
         const { id } = req.params;
-        const { user_id } = req.body;
+        const userId = req.user.id;
 
-        if (!user_id) {
-            return res.status(400).json({ success: false, message: "Thiếu user_id" });
+        // Kiểm tra bài viết có tồn tại không
+        const [postExists] = await pool.query('SELECT id FROM explore_posts WHERE id = ?', [id]);
+        if (postExists.length === 0) {
+            return res.status(404).json({ success: false, message: "Bài viết không tồn tại" });
         }
 
-        // Kiểm tra xem đã thích bài viết chưa
+        // Kiểm tra xem đã like chưa
         const [checkRows] = await pool.query(
             'SELECT id FROM explore_likes WHERE post_id = ? AND user_id = ?',
-            [id, user_id]
+            [id, userId]
         );
 
         let isLiked = false;
         if (checkRows.length > 0) {
             // Đã thích -> Bỏ thích
-            await pool.query('DELETE FROM explore_likes WHERE post_id = ? AND user_id = ?', [id, user_id]);
+            await pool.query('DELETE FROM explore_likes WHERE post_id = ? AND user_id = ?', [id, userId]);
             await pool.query('UPDATE explore_posts SET likes_count = GREATEST(0, likes_count - 1) WHERE id = ?', [id]);
             isLiked = false;
         } else {
             // Chưa thích -> Thêm lượt thích
-            await pool.query('INSERT INTO explore_likes (post_id, user_id) VALUES (?, ?)', [id, user_id]);
+            await pool.query('INSERT INTO explore_likes (post_id, user_id) VALUES (?, ?)', [id, userId]);
             await pool.query('UPDATE explore_posts SET likes_count = likes_count + 1 WHERE id = ?', [id]);
             isLiked = true;
         }
 
-        // Lấy lượt thích mới nhất
+        // Lấy lại số like mới nhất
         const [postRows] = await pool.query('SELECT likes_count FROM explore_posts WHERE id = ?', [id]);
         const likesCount = postRows.length > 0 ? postRows[0].likes_count : 0;
 
@@ -491,18 +540,19 @@ router.post('/posts/:id/like', async (req, res) => {
             success: true,
             is_liked: isLiked,
             likes_count: likesCount,
+            total_likes: likesCount,
             message: isLiked ? "Đã thích bài viết" : "Đã bỏ thích bài viết"
         });
 
     } catch (error) {
-        console.error("Lỗi toggle like bài viết:", error);
+        console.error("❌ Lỗi toggle like bài viết:", error);
         res.status(500).json({ success: false, message: "Lỗi Server", error: error.message });
     }
 });
 
 /**
  * 6. GET /explore/posts/:id/comments
- * Lấy danh sách bình luận của bài viết
+ * Lấy danh sách bình luận kèm User Avatar và tên thật
  */
 router.get('/posts/:id/comments', async (req, res) => {
     await initPromise;
@@ -513,6 +563,7 @@ router.get('/posts/:id/comments', async (req, res) => {
                 c.id,
                 c.post_id,
                 c.user_id,
+                c.parent_id,
                 c.content,
                 c.created_at,
                 COALESCE(u.ho_ten, u.ten_dang_nhap, 'Người dùng') AS author_name,
@@ -524,74 +575,136 @@ router.get('/posts/:id/comments', async (req, res) => {
         `;
         const [rows] = await pool.query(sql, [id]);
 
-        const formattedComments = rows.map(item => ({
-            ...item,
-            created_at_formatted: formatTimeAgo(item.created_at)
-        }));
+        // Gom các reply lồng nhau nếu có parent_id
+        const commentMap = {};
+        const rootComments = [];
+
+        rows.forEach(item => {
+            const formatted = {
+                id: item.id,
+                review_id: item.post_id,
+                post_id: item.post_id,
+                user_id: item.user_id,
+                user_name: item.author_name,
+                author_name: item.author_name,
+                user_avatar: resolveImageUrl(req, item.author_avatar),
+                author_avatar: resolveImageUrl(req, item.author_avatar),
+                parent_id: item.parent_id,
+                noi_dung: item.content,
+                content: item.content,
+                created_at: formatTimeAgo(item.created_at),
+                raw_created_at: item.created_at,
+                replies: []
+            };
+            commentMap[item.id] = formatted;
+        });
+
+        rows.forEach(item => {
+            if (item.parent_id && commentMap[item.parent_id]) {
+                commentMap[item.parent_id].replies.push(commentMap[item.id]);
+            } else {
+                rootComments.push(commentMap[item.id]);
+            }
+        });
 
         res.json({
             success: true,
-            data: formattedComments
+            data: rootComments
         });
     } catch (error) {
-        console.error("Lỗi lấy danh sách bình luận:", error);
+        console.error("❌ Lỗi lấy danh sách bình luận:", error);
         res.status(500).json({ success: false, message: "Lỗi Server", error: error.message });
     }
 });
 
 /**
- * 7. POST /explore/posts/:id/comments
+ * 7. POST /explore/posts/:id/comments (Bắt buộc JWT)
  * Thêm bình luận mới vào bài viết
  */
-router.post('/posts/:id/comments', async (req, res) => {
+router.post('/posts/:id/comments', authenticateToken, async (req, res) => {
     await initPromise;
     try {
         const { id } = req.params;
-        const { user_id, content } = req.body;
+        const userId = req.user.id;
+        const { content, noi_dung, parent_id } = req.body;
+        const finalContent = (content || noi_dung || '').trim();
 
-        if (!user_id || !content || !content.trim()) {
-            return res.status(400).json({ success: false, message: "Thiếu user_id hoặc nội dung bình luận" });
+        if (!finalContent) {
+            return res.status(400).json({ success: false, message: "Vui lòng nhập nội dung bình luận" });
         }
 
-        const insertSql = 'INSERT INTO explore_comments (post_id, user_id, content) VALUES (?, ?, ?)';
-        const [result] = await pool.query(insertSql, [id, user_id, content.trim()]);
+        // Kiểm tra bài viết tồn tại
+        const [postExists] = await pool.query('SELECT id FROM explore_posts WHERE id = ?', [id]);
+        if (postExists.length === 0) {
+            return res.status(404).json({ success: false, message: "Bài viết không tồn tại" });
+        }
+
+        const insertSql = 'INSERT INTO explore_comments (post_id, user_id, parent_id, content) VALUES (?, ?, ?, ?)';
+        const [result] = await pool.query(insertSql, [id, userId, parent_id || null, finalContent]);
 
         // Cập nhật số lượng bình luận bài viết
         await pool.query('UPDATE explore_posts SET comments_count = comments_count + 1 WHERE id = ?', [id]);
 
+        // Lấy thông tin người bình luận
+        const [userRows] = await pool.query('SELECT id, ho_ten, ten_dang_nhap, avatar FROM users WHERE id = ?', [userId]);
+        const user = userRows[0] || {};
+        const authorName = user.ho_ten || user.ten_dang_nhap || 'Bạn';
+        const authorAvatar = resolveImageUrl(req, user.avatar);
+
+        const newComment = {
+            id: result.insertId,
+            review_id: parseInt(id),
+            post_id: parseInt(id),
+            user_id: userId,
+            user_name: authorName,
+            author_name: authorName,
+            user_avatar: authorAvatar,
+            author_avatar: authorAvatar,
+            parent_id: parent_id || null,
+            noi_dung: finalContent,
+            content: finalContent,
+            created_at: 'Vừa xong',
+            replies: []
+        };
+
         res.json({
             success: true,
             message: "Bình luận thành công!",
-            commentId: result.insertId
+            data: newComment
         });
     } catch (error) {
-        console.error("Lỗi thêm bình luận:", error);
+        console.error("❌ Lỗi thêm bình luận:", error);
         res.status(500).json({ success: false, message: "Lỗi Server", error: error.message });
     }
 });
 
 /**
- * 8. DELETE /explore/posts/:id
- * Xóa bài viết
+ * 8. DELETE /explore/posts/:id (Bắt buộc JWT - Chủ bài viết hoặc Admin)
  */
-router.delete('/posts/:id', async (req, res) => {
+router.delete('/posts/:id', authenticateToken, async (req, res) => {
     await initPromise;
     try {
         const { id } = req.params;
-        const { user_id } = req.body;
+        const userId = req.user.id;
+        const isAdmin = req.user.vai_tro === 'admin' || req.user.role === 'admin';
 
-        if (!user_id) {
-            return res.status(400).json({ success: false, message: "Thiếu user_id" });
+        const [postRows] = await pool.query('SELECT user_id FROM explore_posts WHERE id = ?', [id]);
+        if (postRows.length === 0) {
+            return res.status(404).json({ success: false, message: "Bài viết không tồn tại" });
+        }
+
+        if (postRows[0].user_id !== userId && !isAdmin) {
+            return res.status(403).json({ success: false, message: "Bạn không có quyền xóa bài viết này" });
         }
 
         // Xóa bình luận & lượt thích liên quan
         await pool.query('DELETE FROM explore_comments WHERE post_id = ?', [id]);
         await pool.query('DELETE FROM explore_likes WHERE post_id = ?', [id]);
-        await pool.query('DELETE FROM explore_posts WHERE id = ? AND user_id = ?', [id, user_id]);
+        await pool.query('DELETE FROM explore_posts WHERE id = ?', [id]);
 
         res.json({ success: true, message: "Đã xóa bài viết thành công" });
     } catch (error) {
-        console.error("Lỗi xóa bài viết:", error);
+        console.error("❌ Lỗi xóa bài viết:", error);
         res.status(500).json({ success: false, message: "Lỗi Server", error: error.message });
     }
 });

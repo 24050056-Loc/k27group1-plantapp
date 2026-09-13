@@ -10,6 +10,7 @@ const PORT = process.env.PORT || 8080;
 app.use(express.json());
 app.use(express.urlencoded({ extended: true })); // Cho phép nhận dữ liệu dạng x-www-form-urlencoded
 app.use(cors());
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // ==========================================
 // 1. IMPORT CÁC FILE ROUTES
@@ -48,6 +49,7 @@ const adminApiRoutes = require('./src/routes/admin/adminApi');
 // Cụm Route người dùng công cộng
 app.use('/products', productsRoutes);
 app.use('/auth', authRoutes);
+app.use('/api/auth', authRoutes);
 app.use('/categories', categoriesRoutes);
 app.use('/lienhe', contactRoutes);
 app.use('/checkout', checkoutRoutes);

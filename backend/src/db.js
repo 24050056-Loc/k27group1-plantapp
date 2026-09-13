@@ -17,7 +17,10 @@ const pool = mysql.createPool({
     port: dbPort,
     waitForConnections: true,
     connectionLimit: 10,
-    connectTimeout: 10000
+    queueLimit: 0,
+    connectTimeout: 30000,
+    enableKeepAlive: true,
+    keepAliveInitialDelay: 10000
 });
 
 // Test kết nối khi khởi động server

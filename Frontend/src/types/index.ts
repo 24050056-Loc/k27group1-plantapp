@@ -42,6 +42,11 @@ export type Product = {
   so_luong_kho: number;
   hinh_anh_url?: string | null; // relative path (images/cactus.jpg) hoặc URL
   dang_kinh_doanh?: number;
+  is_combo?: boolean | number;
+  original_price?: number | string | null;
+  discount_percent?: number | null;
+  combo_items?: string[] | null;
+  dac_tinh?: any;
 };
 
 export type Category = {
@@ -58,6 +63,12 @@ export type CartItem = {
   gia_tien: string;
   hinh_anh_url?: string | null;
   so_luong_kho: number;
+  mo_ta?: string | null;
+  is_combo?: boolean;
+  original_price?: number | null;
+  discount_percent?: number | null;
+  combo_items?: string[] | null;
+  dac_tinh?: any;
 };
 
 export type Order = {

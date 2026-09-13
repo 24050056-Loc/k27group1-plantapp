@@ -69,7 +69,7 @@ export default function CheckoutScreen({
   const { collectedVouchers } = useVoucher();
 
   const [address, setAddress] = useState(user?.dia_chi || "");
-  const [addressConfirmed, setAddressConfirmed] = useState(Boolean(user?.dia_chi));
+  const [addressConfirmed, setAddressConfirmed] = useState(false);
   const [loading, setLoading] = useState(false);
   const [cartSubtotal, setCartSubtotal] = useState(0);
   const [fetchingCart, setFetchingCart] = useState(true);
@@ -99,13 +99,13 @@ export default function CheckoutScreen({
       }
       try {
         const items = await getCart(token);
-        const total = items.reduce(
+        const sub = items.reduce(
           (sum, item) => sum + parseFloat(item.gia_tien) * item.so_luong,
           0
         );
-        setCartSubtotal(total);
+        setCartSubtotal(sub);
       } catch (err) {
-        console.error("Lỗi lấy giỏ hàng tại Checkout:", err);
+        console.error("Lỗi khi tải giỏ hàng trên Checkout:", err);
       } finally {
         setFetchingCart(false);
       }
@@ -116,7 +116,8 @@ export default function CheckoutScreen({
   useEffect(() => {
     const nextAddress = user?.dia_chi || "";
     setAddress(nextAddress);
-    setAddressConfirmed(Boolean(nextAddress.trim()));
+    // Luôn yêu cầu khách hàng xác nhận địa chỉ trước khi thanh toán
+    setAddressConfirmed(false);
   }, [user?.dia_chi]);
 
   const useCurrentLocationForAddress = async () => {
@@ -281,41 +282,64 @@ export default function CheckoutScreen({
             <View style={styles.cardHeaderRow}>
               <MapPin size={18} stroke="#2E7D32" />
               <Text style={styles.cardTitle}>Địa chỉ giao hàng</Text>
+              {addressConfirmed && (
+                <View style={styles.confirmedBadgeSmall}>
+                  <Text style={styles.confirmedBadgeSmallText}>✓ Đã xác nhận</Text>
+                </View>
+              )}
             </View>
             <TextInput
               value={address}
-              editable={false}
-              placeholder="Hãy cập nhật địa chỉ trong trang Profile hoặc lấy vị trí hiện tại"
+              editable={!addressConfirmed && !loading}
+              onChangeText={(t) => {
+                setAddress(t);
+                setAddressConfirmed(false);
+              }}
+              placeholder="Nhập địa chỉ giao hàng hoặc lấy vị trí hiện tại"
               placeholderTextColor="#999"
               multiline
-              style={styles.addressInput}
+              style={[
+                styles.addressInput,
+                addressConfirmed && styles.addressInputConfirmed,
+              ]}
             />
 
-            <TouchableOpacity
-              style={[styles.locationButton, locatingAddress && styles.locationButtonDisabled]}
-              onPress={useCurrentLocationForAddress}
-              disabled={locatingAddress || loading}
-            >
-              <MapPin size={16} color="#2E7D32" />
-              <Text style={styles.locationButtonText}>
-                {locatingAddress ? "Đang xác định vị trí..." : "Lấy vị trí hiện tại"}
-              </Text>
-            </TouchableOpacity>
+            {!addressConfirmed && (
+              <TouchableOpacity
+                style={[styles.locationButton, locatingAddress && styles.locationButtonDisabled]}
+                onPress={useCurrentLocationForAddress}
+                disabled={locatingAddress || loading}
+              >
+                <MapPin size={16} color="#2E7D32" />
+                <Text style={styles.locationButtonText}>
+                  {locatingAddress ? "Đang xác định vị trí..." : "Lấy vị trí hiện tại"}
+                </Text>
+              </TouchableOpacity>
+            )}
 
             <TouchableOpacity
-              style={[styles.confirmAddressButton, addressConfirmed && styles.confirmAddressButtonDone]}
+              style={[
+                styles.confirmAddressButton,
+                addressConfirmed && styles.confirmAddressButtonDone,
+                !address.trim() && { opacity: 0.6 },
+              ]}
               onPress={() => {
-                if (!address.trim()) {
-                  Alert.alert("Thiếu địa chỉ", "Vui lòng lấy vị trí hoặc nhập địa chỉ trước khi xác nhận.");
-                  return;
+                if (addressConfirmed) {
+                  setAddressConfirmed(false);
+                } else {
+                  if (!address.trim()) {
+                    Alert.alert("Thiếu địa chỉ", "Vui lòng nhập địa chỉ hoặc lấy vị trí trước khi xác nhận.");
+                    return;
+                  }
+                  setAddressConfirmed(true);
+                  Alert.alert("Thành công", "Đã xác nhận địa chỉ giao hàng! Bạn có thể chọn phương thức thanh toán bên dưới.");
                 }
-                setAddressConfirmed(true);
               }}
               disabled={loading}
             >
               <CheckCircle2 size={17} color={addressConfirmed ? "#fff" : "#2E7D32"} />
               <Text style={[styles.confirmAddressText, addressConfirmed && styles.confirmAddressTextDone]}>
-                {addressConfirmed ? "Đã xác nhận địa chỉ" : "Xác nhận địa chỉ giao hàng"}
+                {addressConfirmed ? "Đã xác nhận địa chỉ (Nhấn để sửa)" : "Xác nhận địa chỉ giao hàng"}
               </Text>
             </TouchableOpacity>
           </View>
@@ -491,7 +515,26 @@ export default function CheckoutScreen({
           </View>
 
           {/* Section 4: Phương thức thanh toán */}
-          <Text style={styles.sectionHeading}>Phương thức thanh toán</Text>
+          <View style={styles.sectionHeadingRow}>
+            <Text style={styles.sectionHeading}>Phương thức thanh toán</Text>
+            {addressConfirmed ? (
+              <View style={styles.confirmedBadge}>
+                <Text style={styles.confirmedBadgeText}>✓ Đã mở khóa</Text>
+              </View>
+            ) : (
+              <View style={styles.unconfirmedBadge}>
+                <Text style={styles.unconfirmedBadgeText}>🔒 Chưa mở khóa</Text>
+              </View>
+            )}
+          </View>
+
+          {!addressConfirmed && (
+            <View style={styles.lockedNoticeBox}>
+              <Text style={styles.lockedNoticeText}>
+                ⚠️ Vui lòng nhấn "Xác nhận địa chỉ giao hàng" ở phía trên để mở khóa các phương thức thanh toán.
+              </Text>
+            </View>
+          )}
 
           {loading ? (
             <ActivityIndicator size="large" color="#2E7D32" style={{ marginVertical: 24 }} />
@@ -500,8 +543,17 @@ export default function CheckoutScreen({
               {/* COD option */}
               <TouchableOpacity
                 style={[styles.paymentCard, (!addressConfirmed || loading) && styles.paymentCardDisabled]}
-                onPress={() => handleChoosePayment("COD")}
-                disabled={!addressConfirmed || loading}
+                onPress={() => {
+                  if (!addressConfirmed) {
+                    Alert.alert(
+                      "Chưa xác nhận địa chỉ",
+                      "Vui lòng nhấn nút 'Xác nhận địa chỉ giao hàng' ở trên trước khi chọn phương thức thanh toán."
+                    );
+                    return;
+                  }
+                  handleChoosePayment("COD");
+                }}
+                activeOpacity={addressConfirmed ? 0.7 : 0.9}
               >
                 <View style={styles.paymentIconBg}>
                   <Truck size={22} stroke="#2E7D32" />
@@ -515,8 +567,17 @@ export default function CheckoutScreen({
               {/* QR Option */}
               <TouchableOpacity
                 style={[styles.paymentCard, styles.paymentCardHighlight, (!addressConfirmed || loading) && styles.paymentCardDisabled]}
-                onPress={() => handleChoosePayment("QR")}
-                disabled={!addressConfirmed || loading}
+                onPress={() => {
+                  if (!addressConfirmed) {
+                    Alert.alert(
+                      "Chưa xác nhận địa chỉ",
+                      "Vui lòng nhấn nút 'Xác nhận địa chỉ giao hàng' ở trên trước khi chọn phương thức thanh toán."
+                    );
+                    return;
+                  }
+                  handleChoosePayment("QR");
+                }}
+                activeOpacity={addressConfirmed ? 0.7 : 0.9}
               >
                 <View style={[styles.paymentIconBg, { backgroundColor: "#E8F5E9" }]}>
                   <QrCode size={22} stroke="#2E7D32" />
@@ -725,4 +786,62 @@ const styles = StyleSheet.create({
   paymentSub: { fontSize: 12, color: "#777", marginTop: 2 },
   fastBadge: { backgroundColor: "#E8F5E9", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
   fastBadgeText: { fontSize: 10, fontWeight: "700", color: "#2E7D32" },
+  confirmedBadgeSmall: {
+    marginLeft: "auto",
+    backgroundColor: "#E8F5E9",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  confirmedBadgeSmallText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#2E7D32",
+  },
+  addressInputConfirmed: {
+    backgroundColor: "#F4FAF3",
+    borderColor: "#A5D6A7",
+  },
+  sectionHeadingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
+  unconfirmedBadge: {
+    backgroundColor: "#FFF3E0",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  unconfirmedBadgeText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#E65100",
+  },
+  confirmedBadge: {
+    backgroundColor: "#E8F5E9",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  confirmedBadgeText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#2E7D32",
+  },
+  lockedNoticeBox: {
+    backgroundColor: "#FFF8E1",
+    borderWidth: 1,
+    borderColor: "#FFE082",
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 14,
+  },
+  lockedNoticeText: {
+    fontSize: 12,
+    color: "#F57F17",
+    fontWeight: "600",
+    lineHeight: 18,
+  },
 });

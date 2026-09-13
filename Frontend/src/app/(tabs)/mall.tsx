@@ -1,7 +1,7 @@
-import React, { useEffect, useState } from "react";
-import { View, Text, StyleSheet, Image, TouchableOpacity, TextInput, FlatList, ActivityIndicator, Alert, ScrollView } from "react-native";
-import { Search, Plus, ShoppingCart, RotateCcw } from "lucide-react-native";
-import { getProducts } from "../../services/productService";
+import React, { useEffect, useState, useRef } from "react";
+import { View, Text, StyleSheet, Image, TouchableOpacity, TextInput, ActivityIndicator, Alert, ScrollView, Animated, Keyboard } from "react-native";
+import { Search, Plus, ShoppingCart, RotateCcw, X } from "lucide-react-native";
+import { getProducts, searchProducts } from "../../services/productService";
 import { getCategories } from "../../services/categoryService";
 import { addToCart, getCart } from "../../services/cartService";
 import { Product, Category } from "../../types";
@@ -116,6 +116,53 @@ export default function MallScreen({
 
   const handleSearch = (text: string) => {
     setSearch(text);
+    // Also trigger suggestion search
+    handleSuggestionSearch(text);
+  };
+
+  // ─ Search suggestions (realtime dropdown) ───────────────────────────
+  const [suggestions, setSuggestions] = useState<Product[]>([]);
+  const [suggesting, setSuggesting] = useState(false);
+  const [searchFocused, setSearchFocused] = useState(false);
+  const suggestDebounce = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const dropdownAnim = useRef(new Animated.Value(0)).current;
+
+  const showDropdown = searchFocused && search.length > 0;
+
+  useEffect(() => {
+    Animated.timing(dropdownAnim, {
+      toValue: showDropdown ? 1 : 0,
+      duration: 160,
+      useNativeDriver: true
+    }).start();
+  }, [showDropdown]);
+
+  const handleSuggestionSearch = (text: string) => {
+    if (suggestDebounce.current) clearTimeout(suggestDebounce.current);
+    if (!text.trim()) { setSuggestions([]); setSuggesting(false); return; }
+    setSuggesting(true);
+    suggestDebounce.current = setTimeout(async () => {
+      try {
+        const res = await searchProducts(text);
+        setSuggestions(res);
+      } catch { setSuggestions([]); }
+      finally { setSuggesting(false); }
+    }, 350);
+  };
+
+  const handleSelectSuggestion = (product: Product) => {
+    Keyboard.dismiss();
+    setSearchFocused(false);
+    setSearch("");
+    setSuggestions([]);
+    onSelectProduct(product);
+  };
+
+  const handleClearSearch = () => {
+    setSearch("");
+    setSuggestions([]);
+    setSearchFocused(false);
+    Keyboard.dismiss();
   };
 
   const handleAddToCart = async (product: Product) => {
@@ -180,15 +227,75 @@ export default function MallScreen({
         </View>
       </View>
 
-      <View style={styles.searchRow}>
-        <Search size={18} stroke="#666" style={styles.searchIcon} />
-        <TextInput
-          value={search}
-          onChangeText={handleSearch}
-          placeholder="Tìm sản phẩm cây cảnh, cây giống..."
-          placeholderTextColor="#888"
-          style={styles.searchInput}
-        />
+      {/* Search bar with dropdown */}
+      <View style={styles.searchWrapper}>
+        <View style={[styles.searchRow, searchFocused && styles.searchRowFocused]}>
+          <Search size={18} stroke={searchFocused ? "#2E7D32" : "#888"} style={styles.searchIcon} />
+          <TextInput
+            value={search}
+            onChangeText={handleSearch}
+            onFocus={() => setSearchFocused(true)}
+            placeholder="Tìm sản phẩm cây cảnh, cây giống..."
+            placeholderTextColor="#AAA"
+            style={styles.searchInput}
+            returnKeyType="search"
+          />
+          {suggesting && <ActivityIndicator size="small" color="#2E7D32" style={{ marginRight: 8 }} />}
+          {search.length > 0 && (
+            <TouchableOpacity onPress={handleClearSearch} style={styles.clearBtn}>
+              <X size={16} stroke="#AAA" />
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {/* Suggestion dropdown */}
+        {showDropdown && (
+          <Animated.View style={[
+            styles.dropdown,
+            {
+              opacity: dropdownAnim,
+              transform: [{ translateY: dropdownAnim.interpolate({ inputRange: [0, 1], outputRange: [-6, 0] }) }]
+            }
+          ]}>
+            {suggestions.length === 0 && !suggesting ? (
+              <View style={styles.dropdownEmpty}>
+                <Text style={styles.dropdownEmptyText}>Không tìm thấy "{search}"</Text>
+              </View>
+            ) : (
+              <ScrollView
+                nestedScrollEnabled={true}
+                keyboardShouldPersistTaps="handled"
+                style={{ maxHeight: 280 }}
+                showsVerticalScrollIndicator={true}
+              >
+                {suggestions.map((item, index) => (
+                  <React.Fragment key={item.id}>
+                    <TouchableOpacity
+                      style={styles.suggestionItem}
+                      onPress={() => handleSelectSuggestion(item)}
+                      activeOpacity={0.7}
+                    >
+                      <Image
+                        source={resolveProductImage(item.hinh_anh_url)}
+                        style={styles.suggestionImg}
+                      />
+                      <View style={styles.suggestionInfo}>
+                        <Text style={styles.suggestionName} numberOfLines={1}>{item.ten_san_pham}</Text>
+                        <Text style={styles.suggestionPrice}>
+                          {parseFloat(item.gia_tien).toLocaleString("vi-VN")}đ
+                        </Text>
+                      </View>
+                      <Text style={styles.suggestionArrow}>›</Text>
+                    </TouchableOpacity>
+                    {index < suggestions.length - 1 && (
+                      <View style={{ height: 1, backgroundColor: "#F5F5F5", marginHorizontal: 14 }} />
+                    )}
+                  </React.Fragment>
+                ))}
+              </ScrollView>
+            )}
+          </Animated.View>
+        )}
       </View>
 
       {/* Danh mục dạng cuộn ngang */}
@@ -326,18 +433,14 @@ export default function MallScreen({
       {loading ? (
         <ActivityIndicator size="large" color="#2E7D32" style={{ marginTop: 40 }} />
       ) : (
-        <FlatList
-          data={filteredProducts}
-          numColumns={2}
-          keyExtractor={(item) => item.id.toString()}
-          columnWrapperStyle={styles.rowWrapper}
-          scrollEnabled={false} // Để ScrollView ở App.tsx cuộn chính
-          renderItem={({ item }) => (
+        <View style={styles.productsGrid}>
+          {filteredProducts.map((item) => (
             <TouchableOpacity
+              key={item.id}
               style={styles.productCard}
               onPress={() => onSelectProduct(item)}
             >
-              <Image source={getProductImageSource(item.hinh_anh_url)} style={styles.productImage} />
+              <Image source={getProductImageSource(item.hinh_anh_url)} style={styles.productImage} resizeMode="cover" />
               <Text style={styles.productName} numberOfLines={1}>{item.ten_san_pham}</Text>
               {item.ten_khoa_hoc ? <Text style={styles.scientificName} numberOfLines={1}>{item.ten_khoa_hoc}</Text> : null}
               <View style={styles.productFooter}>
@@ -355,24 +458,25 @@ export default function MallScreen({
                 </TouchableOpacity>
               </View>
             </TouchableOpacity>
-          )}
-          ListEmptyComponent={
+          ))}
+          {filteredProducts.length === 0 && (
             <Text style={styles.emptyText}>Không tìm thấy sản phẩm nào.</Text>
-          }
-        />
+          )}
+        </View>
       )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { padding: 20, paddingTop: 52 },
+  container: { padding: 20, paddingTop: 52, backgroundColor: "#fff" },
   title: { fontSize: 22, fontWeight: "700", color: "#1A2E1A", marginBottom: 16 },
-  searchRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#f5f5f5", borderRadius: 16, paddingHorizontal: 12, height: 48, marginBottom: 16 },
+  searchRow: { flexDirection: "row", alignItems: "center", backgroundColor: "#f5f5f5", borderRadius: 16, paddingHorizontal: 12, height: 48, marginBottom: 16, borderWidth: 1.5, borderColor: "#E8F5E9" },
   searchIcon: { marginRight: 8 },
   searchInput: { flex: 1, fontSize: 14, color: "#333" },
   headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 12 },
   cartButton: { width: 44, height: 44, backgroundColor: "#f5f5f5", borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  productsGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
   rowWrapper: { justifyContent: "space-between" },
   cartBadge: { position: "absolute", top: -6, right: -6, minWidth: 18, height: 18, borderRadius: 9, backgroundColor: "#d32f2f", alignItems: "center", justifyContent: "center", paddingHorizontal: 4 },
   cartBadgeText: { color: "#fff", fontSize: 11, fontWeight: "700" },
@@ -433,6 +537,78 @@ const styles = StyleSheet.create({
   filterTextActive: {
     color: "#E65100",
     fontWeight: "700",
+  },
+  searchWrapper: {
+    position: "relative",
+    zIndex: 999,
+    marginBottom: 16,
+  },
+  searchRowFocused: {
+    backgroundColor: "#F1F8F1",
+    borderColor: "#2E7D32",
+  },
+  clearBtn: {
+    padding: 4,
+    marginRight: 4,
+  },
+  dropdown: {
+    position: "absolute",
+    top: 52,
+    left: 0,
+    right: 0,
+    backgroundColor: "#FFF",
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#E8F5E9",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 12,
+    zIndex: 9999,
+    overflow: "hidden",
+  },
+  dropdownEmpty: {
+    padding: 16,
+    alignItems: "center",
+  },
+  dropdownEmptyText: {
+    fontSize: 13,
+    color: "#999",
+    textAlign: "center",
+  },
+  suggestionItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+  },
+  suggestionImg: {
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    backgroundColor: "#E8F5E9",
+    marginRight: 12,
+  },
+  suggestionInfo: {
+    flex: 1,
+  },
+  suggestionName: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#1A2E1A",
+    marginBottom: 2,
+  },
+  suggestionPrice: {
+    fontSize: 13,
+    color: "#2E7D32",
+    fontWeight: "700",
+  },
+  suggestionArrow: {
+    paddingLeft: 8,
+    fontSize: 22,
+    color: "#CCC",
+    lineHeight: 24,
   },
 });
 

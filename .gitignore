@@ -37,6 +37,12 @@ yarn-error.*
 # generated native folders
 /ios
 /android
-
+# Google Drive API credentials
+client.json
+token.json
+backend/client.json
+backend/token.json
 /backend/client.json
 /backend/token.json
+**/client.json
+**/token.json

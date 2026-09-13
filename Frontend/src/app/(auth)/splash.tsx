@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from "react";
-import { View, Text, StyleSheet, Animated, ActivityIndicator, StatusBar } from "react-native";
+import { View, Text, StyleSheet, Animated, ActivityIndicator, StatusBar, Image } from "react-native";
 
 type Props = {
   onFinish: () => void;
@@ -38,7 +38,11 @@ export default function SplashScreen({ onFinish }: Props) {
       
       <Animated.View style={[styles.logoContainer, { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }]}>
         <View style={styles.iconCircle}>
-          <Text style={styles.logoIcon}>🌿</Text>
+          <Image
+            source={require("../../../assets/LogoPlantApp.png")}
+            style={styles.logoImage}
+            resizeMode="cover"
+          />
         </View>
         <Text style={styles.title}>Plantify</Text>
         <Text style={styles.subtitle}>Mang thiên nhiên vào không gian sống</Text>
@@ -65,16 +69,24 @@ const styles = StyleSheet.create({
     justifyContent: "center" 
   },
   iconCircle: { 
-    width: 100, 
-    height: 100, 
-    borderRadius: 50, 
-    backgroundColor: "rgba(255,255,255,0.15)", 
+    width: 110, 
+    height: 110, 
+    borderRadius: 55, 
+    backgroundColor: "transparent", 
     alignItems: "center", 
     justifyContent: "center", 
-    marginBottom: 20 
+    marginBottom: 20,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 8,
   },
-  logoIcon: { 
-    fontSize: 56 
+  logoImage: { 
+    width: 110, 
+    height: 110,
+    borderRadius: 55,
   },
   title: { 
     fontSize: 36, 
