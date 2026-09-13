@@ -28,6 +28,7 @@ import {
 import { Product } from "../../types";
 import { resolveProductImage } from "../../assets/productImages";
 import { useAuth } from "../../context/AuthContext";
+import { recordProductView } from "../../services/dailyTaskService";
 import { addToCart } from "../../services/cartService";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
@@ -111,6 +112,15 @@ export default function ProductDetailScreen({ product, onBack }: Props) {
       Animated.spring(slideAnim, { toValue: 0, tension: 60, friction: 9, useNativeDriver: true })
     ]).start();
   }, []);
+
+  // Ghi nhận nhiệm vụ hàng ngày: Xem 3 sản phẩm
+  useEffect(() => {
+    if (token && product?.id) {
+      recordProductView(product.id).catch((err) => {
+        console.warn("[daily_tasks] Không thể ghi nhận xem sản phẩm:", err?.message);
+      });
+    }
+  }, [token, product?.id]);
 
   if (!product) {
     return (

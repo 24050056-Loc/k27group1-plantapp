@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useCallback } from "react";
 import {
   StyleSheet,
   Text,
@@ -128,11 +128,14 @@ function AppContent() {
       : "home"
   );
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [productReturnScreen, setProductReturnScreen] = useState<ScreenKey | null>(null);
   const [activeOrderId, setActiveOrderId] = useState<number | null>(null);
   const [checkoutAmount, setCheckoutAmount] = useState<number>(0);
   const [selectedOrderId, setSelectedOrderId] = useState<number | null>(null);
   const [mallCategoryId, setMallCategoryId] = useState<number | null>(null);
   const [isCreatePostOpen, setIsCreatePostOpen] = useState(false);
+  // Key dùng để trigger EventScreen re-fetch daily tasks khi quay lại từ màn hình khác
+  const [eventRefreshKey, setEventRefreshKey] = useState(0);
 
   // Auto-login giả lập cho FE khi bật DEV_MODE
   React.useEffect(() => {
@@ -161,6 +164,7 @@ function AppContent() {
 
   const handleSelectProduct = (product: Product, fromScreen: ScreenKey) => {
     setSelectedProduct(product);
+    setProductReturnScreen(fromScreen);
     setScreen("productDetail");
   };
 
@@ -207,10 +211,16 @@ function AppContent() {
       case "event":
         return (
           <EventScreen
+            refreshKey={eventRefreshKey}
             onOpenExplore={() => {
               setActiveTab("explore");
               setScreen("explore");
             }}
+            onOpenMall={() => {
+              setActiveTab("mall");
+              setScreen("mall");
+            }}
+            onSelectProduct={(p: Product) => handleSelectProduct(p, "event")}
           />
         );
       case "profile":
@@ -243,7 +253,18 @@ function AppContent() {
         return (
           <ProductDetailScreen
             product={selectedProduct}
-            onBack={() => setScreen(activeTab)}
+            onBack={() => {
+              const target = productReturnScreen ?? activeTab;
+              setProductReturnScreen(null);
+              setScreen(target);
+              if (target === "event") {
+                // Fetch lần 1: ngay khi mount (refreshKey tăng một lạn)
+                setEventRefreshKey((k) => k + 1);
+                // Fetch lần 2 sau 1.5s: giải quyết race condition với recordProductView API
+                // (API có thể chưa ghi xong khi EventScreen fetch lần 1)
+                setTimeout(() => setEventRefreshKey((k) => k + 1), 1500);
+              }
+            }}
           />
         );
       case "orderDetail":
@@ -330,6 +351,11 @@ function AppContent() {
                     onPress={() => {
                       setActiveTab(tab.key);
                       setScreen(tab.key);
+                      // Khi chuyển về tab Event từ tab khác: trigger delayed refresh
+                      // để đảm bảo các API async từ màn hình trước (like, community) đã hoàn thành
+                      if (tab.key === "event" && screen !== "event") {
+                        setTimeout(() => setEventRefreshKey((k) => k + 1), 1500);
+                      }
                     }}
                     style={styles.tabItem}
                   >

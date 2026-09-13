@@ -17,6 +17,7 @@ import { Compass, Sparkles, ImagePlus, Search, WifiOff, RotateCcw } from "lucide
 import { Review } from "../../types/review";
 import { getReviews, resolveImageUrl } from "../../services/reviewService";
 import { useAuth } from "../../context/AuthContext";
+import { recordCommunityExplore } from "../../services/dailyTaskService";
 import { ReviewCard } from "../components/review/ReviewCard";
 import { CreatePostModal } from "../components/review/CreatePostModal";
 import { ImageLightboxModal } from "../components/review/ImageLightboxModal";
@@ -58,6 +59,15 @@ export default function ExploreScreen({
   useEffect(() => {
     loadFeed(selectedCategory);
   }, [selectedCategory, user?.id]);
+
+  // Ghi nhận nhiệm vụ hàng ngày: Khám phá cộng đồng
+  useEffect(() => {
+    if (user?.id) {
+      recordCommunityExplore().catch((err) => {
+        console.warn("[daily_tasks] Không thể ghi nhận khám phá cộng đồng:", err?.message);
+      });
+    }
+  }, [user?.id]);
 
   const loadFeed = async (category: string) => {
     try {

@@ -963,41 +963,18 @@ router.get('/quests/stats', async (req, res) => {
         let loginCompleted = 0;
         let viewProductCompleted = 0;
         let seedClaimed = 0;
-        
-        rows.forEach(row => {
-            if (row.last_seed_claim_date) {
-                let claimDateStr = '';
-                if (row.last_seed_claim_date instanceof Date) {
-                    const parts = new Intl.DateTimeFormat('en-CA', {
-                        timeZone: 'Asia/Ho_Chi_Minh',
-                        year: 'numeric',
-                        month: '2-digit',
-                        day: '2-digit',
-                    }).formatToParts(row.last_seed_claim_date);
-                    const map = {};
-                    parts.forEach(p => { map[p.type] = p.value; });
-                    claimDateStr = `${map.year}-${map.month}-${map.day}`;
-                } else {
-                    claimDateStr = String(row.last_seed_claim_date).split('T')[0];
-                }
 
-                if (claimDateStr === todayStr) {
-                    seedClaimed++;
-                }
-            }
-            
-            if (row.missions) {
-                let missionsObj = {};
-                if (typeof row.missions === 'string') {
-                    try { missionsObj = JSON.parse(row.missions); } catch(e) {}
-                } else {
-                    missionsObj = row.missions;
-                }
-                
-                if (missionsObj.login) loginCompleted++;
-                if (missionsObj.view_product) viewProductCompleted++;
-            }
-        });
+        try {
+            const [loginRows] = await pool.query("SELECT COUNT(*) as cnt FROM daily_logins WHERE login_date = ?", [todayStr]);
+            const [viewRows] = await pool.query("SELECT user_id FROM daily_product_views WHERE view_date = ? GROUP BY user_id HAVING COUNT(DISTINCT product_id) >= 3", [todayStr]);
+            const [seedRows] = await pool.query("SELECT COUNT(*) as cnt FROM daily_task_claims WHERE task_date = ? AND (task_id = 'community_explore' OR reward_type = 'seed')", [todayStr]);
+
+            loginCompleted = loginRows[0]?.cnt || 0;
+            viewProductCompleted = viewRows.length;
+            seedClaimed = seedRows[0]?.cnt || 0;
+        } catch (tableErr) {
+            console.warn("Dùng fallback cho admin quest stats:", tableErr.message);
+        }
 
         res.json({
             success: true,

@@ -4,6 +4,7 @@ const bcrypt = require('bcryptjs');
 const mysql = require('mysql2/promise');
 const jwt = require('jsonwebtoken');
 const pool = require('../db.js');
+const { recordDailyLogin } = require('../Controller/dailyTaskController');
 
 const SECRET_KEY = process.env.SECRET_KEY || "cay_canh_bi_mat_123";
 
@@ -66,6 +67,9 @@ router.post('/login', async (req, res) => {
 
         // Cập nhật last_seen = NOW() khi đăng nhập thành công
         await pool.execute('UPDATE users SET last_seen = NOW() WHERE id = ?', [user.id]);
+
+        // Ghi nhận nhiệm vụ hàng ngày: Đăng nhập mỗi ngày
+        await recordDailyLogin(user.id);
 
         // Tạo JWT Token
         const token = jwt.sign(
@@ -202,6 +206,9 @@ router.post('/google', async (req, res) => {
 
         // 4. Cập nhật last_seen = NOW()
         await pool.execute('UPDATE users SET last_seen = NOW() WHERE id = ?', [user.id]);
+
+        // Ghi nhận nhiệm vụ hàng ngày: Đăng nhập mỗi ngày
+        await recordDailyLogin(user.id);
 
         // 5. Cấp JWT Token của PlantApp (giống Login thường)
         const token = jwt.sign(

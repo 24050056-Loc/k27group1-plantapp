@@ -252,8 +252,22 @@ INSERT INTO `event_progress` (`user_id`, `selected_seed`, `stage`, `stage_start_
 
 
 -- =========================================================================
--- 8. BẢNG ĐƠN HÀNG (ORDERS)
+-- 7.1. BẢNG KHO HẠT GIỐNG NGƯỜI DÙNG (USER_SEED_INVENTORY)
 -- =========================================================================
+CREATE TABLE IF NOT EXISTS `user_seed_inventory` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `user_id` int NOT NULL,
+  `seed_id` varchar(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NOT NULL,
+  `quantity` int NOT NULL DEFAULT '1',
+  `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uniq_user_seed` (`user_id`,`seed_id`),
+  KEY `idx_user_id` (`user_id`),
+  CONSTRAINT `fk_user_seed_inventory_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+
 CREATE TABLE `orders` (
   `id` int NOT NULL AUTO_INCREMENT,
   `user_id` int NOT NULL,

@@ -33,6 +33,7 @@ const { router: momoRoutes } = require('./src/routes/momo');
 const waterRoutes = require('./src/routes/water');
 const { router: cronjobRoutes, startCronJobs } = require('./src/routes/cronjob');
 const exploreRoutes = require('./src/routes/explore');
+const dailyTasksRoutes = require('./src/routes/dailyTasks');
 
 // Các route Admin
 const adminRoutes = require('./src/routes/admin');
@@ -63,6 +64,8 @@ app.use('/mobile', mobileRoutes);
 app.use('/coupons', couponsRoutes);
 app.use('/promotional_events', promotional_eventsRoutes);
 app.use('/api/game', minigameRoutes);
+app.use('/api/daily-tasks', dailyTasksRoutes);
+app.use('/daily-tasks', dailyTasksRoutes);
 app.use('/payment', paymentRoutes);
 app.use('/momo', momoRoutes);
 app.use('/water', waterRoutes);
@@ -70,6 +73,7 @@ app.use('/cronjob', cronjobRoutes);
 app.use('/community', exploreRoutes);
 app.use('/explore', exploreRoutes);
 app.use('/api/explore', exploreRoutes);
+app.use('/api/posts', exploreRoutes);
 app.use('/reviews', exploreRoutes);
 app.use('/api/reviews', exploreRoutes);
 

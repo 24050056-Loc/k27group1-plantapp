@@ -13,6 +13,8 @@ import {
   Platform,
   ActivityIndicator,
   Alert,
+  Share,
+  AppState,
 } from "react-native";
 import Svg, {
   Ellipse,
@@ -31,7 +33,18 @@ import {
 import { useVoucher } from "../../context/VoucherContext";
 import { useAuth } from "../../context/AuthContext";
 import axiosClient from "../../api/axiosClient";
-import { resolveProductImageByName } from "../../assets/productImages";
+import {
+  getDailyTasks,
+  claimDailyTask,
+  recordEventShare,
+  checkInDailyTask,
+  getSeedInventory,
+  consumeSeedInventory,
+  DailyTask,
+} from "../../services/dailyTaskService";
+import { getProducts } from "../../services/productService";
+import { Product } from "../../types";
+import { resolveGrowthStageImage, resolveProductImageByName } from "../../assets/productImages";
 import { HarvestCelebrationModal } from "../components/event/HarvestCelebrationModal";
 import { WaterReminderModal } from "../components/event/WaterReminderModal";
 import { createReview } from "../../services/reviewService";
@@ -67,6 +80,7 @@ type Seed = {
   price: string;
   image: ReturnType<typeof resolveProductImageByName>;
   growthStages: GrowthStage[];
+  quantity?: number;
 };
 
 type GrowthStage = {
@@ -77,24 +91,25 @@ type GrowthStage = {
 };
 
 function createGrowthStages(
+  seedId: string,
   image: ReturnType<typeof resolveProductImageByName>,
   descriptions: [string, string, string, string],
 ): GrowthStage[] {
   return [
-    { title: "Cây con", age: "0-6 tháng", description: descriptions[0], image },
-    { title: "Cây đang lớn", age: "6 tháng-2 năm", description: descriptions[1], image },
-    { title: "Cây trưởng thành", age: "2-5 năm", description: descriptions[2], image },
-    { title: "Ra hoa / kết trái", age: "Từ 5 năm", description: descriptions[3], image },
+    { title: "Cây con", age: "0-6 tháng", description: descriptions[0], image: resolveGrowthStageImage(seedId, 0, image) },
+    { title: "Cây đang lớn", age: "6 tháng-2 năm", description: descriptions[1], image: resolveGrowthStageImage(seedId, 1, image) },
+    { title: "Cây trưởng thành", age: "2-5 năm", description: descriptions[2], image: resolveGrowthStageImage(seedId, 2, image) },
+    { title: "Ra hoa / kết trái", age: "Từ 5 năm", description: descriptions[3], image: resolveGrowthStageImage(seedId, 3, image) },
   ];
 }
 
 const SEED_DATA: Seed[] = [
-  { id: "bang-dai-loan", name: "Cây Bàng Đài Loan", emoji: "🌳", description: "Tán cây thanh thoát, tạo cảm giác xanh mát cho không gian sống.", care: "Ưa sáng, tưới 2-3 lần/tuần", growthTime: "4 giờ/1 giai đoạn", color: "#2E7D32", tag: "Bán chạy #1", price: "250.000đ", image: resolveProductImageByName("Cây Bàng Đài Loan"), growthStages: createGrowthStages(resolveProductImageByName("Cây Bàng Đài Loan"), ["Thân mảnh, lá nhỏ và cần giữ ẩm đều.", "Tán bắt đầu mở rộng, cần nhiều ánh sáng.", "Tán cây phân nhánh rõ và chịu nắng tốt.", "Cây tạo tán đẹp, thường được trồng làm cây cảnh."]) },
-  { id: "sau-rieng-ri6", name: "Sầu Riêng Ri6", emoji: "🌱", description: "Giống cây khỏe, được yêu thích bởi hương vị thơm ngon đặc trưng.", care: "Ưa nắng, đất thoát nước tốt", growthTime: "4 giờ/1 giai đoạn", color: "#8D6E63", tag: "Bán chạy", price: "150.000đ", image: resolveProductImageByName("Sầu Riêng Ri6"), growthStages: createGrowthStages(resolveProductImageByName("Sầu Riêng Ri6"), ["Cây con cần che nắng gắt và tưới đều.", "Thân vươn nhanh, bắt đầu tạo tán.", "Cây ra hoa khi đủ tuổi và được chăm đúng cách.", "Cho trái Ri6 thơm béo khi cây trưởng thành."]) },
-  { id: "luoi-ho", name: "Cây Lưỡi Hổ", emoji: "🌿", description: "Cây lọc không khí dễ chăm, phù hợp cho phòng làm việc và phòng ngủ.", care: "Ưa sáng nhẹ, tưới 1 lần/tuần", growthTime: "4 giờ/1 giai đoạn", color: "#558B2F", tag: "Dễ trồng", price: "120.000đ", image: resolveProductImageByName("Cây Lưỡi Hổ"), growthStages: createGrowthStages(resolveProductImageByName("Cây Lưỡi Hổ"), ["Lá non mọc thành cụm nhỏ.", "Lá dài và cứng dần, hình thành bụi.", "Bụi lá đầy đặn, lọc không khí tốt.", "Có thể ra hoa thơm khi cây đủ khỏe."]) },
-  { id: "mang-cut", name: "Cây Măng Cụt", emoji: "🌱", description: "Cây ăn trái nhiệt đới xanh tốt, phù hợp cho khu vườn gia đình.", care: "Ưa nắng, tưới đều mỗi ngày", growthTime: "4 giờ/1 giai đoạn", color: "#2E7D32", tag: "Được yêu thích", price: "110.000đ", image: resolveProductImageByName("Cây Măng Cụt"), growthStages: createGrowthStages(resolveProductImageByName("Cây Măng Cụt"), ["Cây con ưa ẩm và cần đất giàu dinh dưỡng.", "Thân cứng hơn, lá xanh đậm và tán rộng.", "Cây khỏe, bắt đầu tích lũy dinh dưỡng.", "Ra hoa và cho quả măng cụt theo mùa."]) },
-  { id: "buoi-da-xanh", name: "Bưởi Da Xanh", emoji: "🍃", description: "Giống bưởi quen thuộc, cho trái ngon và cây phát triển khỏe.", care: "Ưa nắng, tưới 2-3 lần/tuần", growthTime: "4 giờ/1 giai đoạn", color: "#388E3C", tag: "Bán chạy", price: "95.000đ", image: resolveProductImageByName("Bưởi Da Xanh"), growthStages: createGrowthStages(resolveProductImageByName("Bưởi Da Xanh"), ["Cây con cần nắng nhẹ và tưới đều.", "Tán lá mở rộng, thân bắt đầu hóa gỗ.", "Cây trưởng thành có thể ra hoa nhiều đợt.", "Cho những chùm bưởi da xanh mọng nước."]) },
-  { id: "chom-chom-thai", name: "Cây Chôm Chôm Thái", emoji: "🌿", description: "Cây ăn trái nhiệt đới nổi bật, mang màu xanh tươi cho khu vườn.", care: "Ưa nắng, đất ẩm vừa phải", growthTime: "4 giờ/1 giai đoạn", color: "#43A047", tag: "Mới yêu thích", price: "90.000đ", image: resolveProductImageByName("Cây Chôm Chôm Thái"), growthStages: createGrowthStages(resolveProductImageByName("Cây Chôm Chôm Thái"), ["Lá non xanh sáng, cần giữ ẩm cho rễ.", "Cành lá phát triển mạnh và tạo tán.", "Cây trưởng thành sẵn sàng phân hóa mầm hoa.", "Kết thành chùm chôm chôm đỏ đẹp khi vào mùa."]) },
+  { id: "bang-dai-loan", name: "Cây Bàng Đài Loan", emoji: "🌳", description: "Tán cây thanh thoát, tạo cảm giác xanh mát cho không gian sống.", care: "Ưa sáng, tưới 2-3 lần/tuần", growthTime: "4 giờ/1 giai đoạn", color: "#2E7D32", tag: "Bán chạy #1", price: "250.000đ", image: resolveProductImageByName("Cây Bàng Đài Loan"), growthStages: createGrowthStages("bang-dai-loan", resolveProductImageByName("Cây Bàng Đài Loan"), ["Thân mảnh, lá nhỏ và cần giữ ẩm đều.", "Tán bắt đầu mở rộng, cần nhiều ánh sáng.", "Tán cây phân nhánh rõ và chịu nắng tốt.", "Cây tạo tán đẹp, thường được trồng làm cây cảnh."]) },
+  { id: "sau-rieng-ri6", name: "Sầu Riêng Ri6", emoji: "🌱", description: "Giống cây khỏe, được yêu thích bởi hương vị thơm ngon đặc trưng.", care: "Ưa nắng, đất thoát nước tốt", growthTime: "4 giờ/1 giai đoạn", color: "#8D6E63", tag: "Bán chạy", price: "150.000đ", image: resolveProductImageByName("Sầu Riêng Ri6"), growthStages: createGrowthStages("sau-rieng-ri6", resolveProductImageByName("Sầu Riêng Ri6"), ["Cây con cần che nắng gắt và tưới đều.", "Thân vươn nhanh, bắt đầu tạo tán.", "Cây ra hoa khi đủ tuổi và được chăm đúng cách.", "Cho trái Ri6 thơm béo khi cây trưởng thành."]) },
+  { id: "luoi-ho", name: "Cây Lưỡi Hổ", emoji: "🌿", description: "Cây lọc không khí dễ chăm, phù hợp cho phòng làm việc và phòng ngủ.", care: "Ưa sáng nhẹ, tưới 1 lần/tuần", growthTime: "4 giờ/1 giai đoạn", color: "#558B2F", tag: "Dễ trồng", price: "120.000đ", image: resolveProductImageByName("Cây Lưỡi Hổ"), growthStages: createGrowthStages("luoi-ho", resolveProductImageByName("Cây Lưỡi Hổ"), ["Lá non mọc thành cụm nhỏ.", "Lá dài và cứng dần, hình thành bụi.", "Bụi lá đầy đặn, lọc không khí tốt.", "Có thể ra hoa thơm khi cây đủ khỏe."]) },
+  { id: "mang-cut", name: "Cây Măng Cụt", emoji: "🌱", description: "Cây ăn trái nhiệt đới xanh tốt, phù hợp cho khu vườn gia đình.", care: "Ưa nắng, tưới đều mỗi ngày", growthTime: "4 giờ/1 giai đoạn", color: "#2E7D32", tag: "Được yêu thích", price: "110.000đ", image: resolveProductImageByName("Cây Măng Cụt"), growthStages: createGrowthStages("mang-cut", resolveProductImageByName("Cây Măng Cụt"), ["Cây con ưa ẩm và cần đất giàu dinh dưỡng.", "Thân cứng hơn, lá xanh đậm và tán rộng.", "Cây khỏe, bắt đầu tích lũy dinh dưỡng.", "Ra hoa và cho quả măng cụt theo mùa."]) },
+  { id: "buoi-da-xanh", name: "Bưởi Da Xanh", emoji: "🍃", description: "Giống bưởi quen thuộc, cho trái ngon và cây phát triển khỏe.", care: "Ưa nắng, tưới 2-3 lần/tuần", growthTime: "4 giờ/1 giai đoạn", color: "#388E3C", tag: "Bán chạy", price: "95.000đ", image: resolveProductImageByName("Bưởi Da Xanh"), growthStages: createGrowthStages("buoi-da-xanh", resolveProductImageByName("Bưởi Da Xanh"), ["Cây con cần nắng nhẹ và tưới đều.", "Tán lá mở rộng, thân bắt đầu hóa gỗ.", "Cây trưởng thành có thể ra hoa nhiều đợt.", "Cho những chùm bưởi da xanh mọng nước."]) },
+  { id: "chom-chom-thai", name: "Cây Chôm Chôm Thái", emoji: "🌿", description: "Cây ăn trái nhiệt đới nổi bật, mang màu xanh tươi cho khu vườn.", care: "Ưa nắng, đất ẩm vừa phải", growthTime: "4 giờ/1 giai đoạn", color: "#43A047", tag: "Mới yêu thích", price: "90.000đ", image: resolveProductImageByName("Cây Chôm Chôm Thái"), growthStages: createGrowthStages("chom-chom-thai", resolveProductImageByName("Cây Chôm Chôm Thái"), ["Lá non xanh sáng, cần giữ ẩm cho rễ.", "Cành lá phát triển mạnh và tạo tán.", "Cây trưởng thành sẵn sàng phân hóa mầm hoa.", "Kết thành chùm chôm chôm đỏ đẹp khi vào mùa."]) },
 ];
 
 // ─── Dữ liệu Stage ────────────────────────────────────────────────────────────
@@ -150,11 +165,11 @@ type StageKey = 0 | 1 | 2 | 3 | 4;
 
 // ─── Dữ liệu Nhiệm vụ ─────────────────────────────────────────────────────────
 const MISSION_DATA = [
-  { label: "Đăng nhập mỗi ngày", desc: "Phần thưởng: +1 lượt Tưới nước 💧", reward: "water" },
-  { label: "Xem 3 sản phẩm",     desc: "Phần thưởng: +1 lượt Tưới nước 💧", reward: "water" },
-  { label: "Mua 1 cây bất kỳ",   desc: "Phần thưởng: +1 lượt Bón phân 🌿", reward: "fert"  },
-  { label: "Chia sẻ sự kiện",    desc: "Phần thưởng: +1 lượt Tưới nước 💧", reward: "water" },
-  { label: "Khám phá cộng đồng", desc: "Phần thưởng: 1 hạt giống ngẫu nhiên 🌱", reward: "seed" },
+  { id: "daily_login",       label: "Đăng nhập mỗi ngày", desc: "Phần thưởng: +1 lượt Tưới nước 💧", reward: "water" },
+  { id: "view_products",     label: "Xem 3 sản phẩm",     desc: "Phần thưởng: +1 lượt Tưới nước 💧", reward: "water" },
+  { id: "like_post",         label: "Tim 1 bài viết bất kỳ", desc: "Phần thưởng: +1 lượt Bón phân 🌿", reward: "fert"  },
+  { id: "share_event",       label: "Chia sẻ sự kiện",    desc: "Phần thưởng: +1 lượt Tưới nước 💧", reward: "water" },
+  { id: "community_explore", label: "Khám phá cộng đồng", desc: "Phần thưởng: 1 hạt giống ngẫu nhiên 🌱", reward: "seed" },
 ] as const;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -504,16 +519,20 @@ function VoucherDialog({
 // ─── Component: MissionSheet ──────────────────────────────────────────────────
 function MissionSheet({
   visible,
-  missions,
+  dailyTasks,
+  isTasksLoading,
   onClose,
   onClaim,
-  onExplore,
+  onAction,
+  claimingTaskId,
 }: {
   visible: boolean;
-  missions: boolean[];
+  dailyTasks: DailyTask[];
+  isTasksLoading?: boolean;
   onClose: () => void;
-  onClaim: (index: number) => void;
-  onExplore: () => void;
+  onClaim: (taskId: string) => void;
+  onAction: (taskId: string) => void;
+  claimingTaskId: string | null;
 }) {
   const slideAnim = useRef(new Animated.Value(400)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -532,7 +551,21 @@ function MissionSheet({
     }
   }, [visible]);
 
-  const completed = missions.filter(Boolean).length;
+  // Hợp nhất danh sách nhiệm vụ từ backend và cấu hình
+  const tasksToDisplay = MISSION_DATA.map((cfg) => {
+    const backendTask = dailyTasks.find((t) => t.id === cfg.id);
+    return {
+      id: cfg.id,
+      label: cfg.label,
+      desc: cfg.desc,
+      reward: cfg.reward,
+      status: backendTask?.status || "INCOMPLETE",
+      progress: backendTask?.progress ?? 0,
+      target: backendTask?.target ?? (cfg.id === "view_products" ? 3 : undefined),
+    };
+  });
+
+  const completedCount = tasksToDisplay.filter((t) => t.status === "CLAIMED").length;
 
   return (
     <Modal transparent visible={visible} animationType="none" onRequestClose={onClose}>
@@ -552,7 +585,7 @@ function MissionSheet({
             </View>
             <View style={styles.sheetHeaderRight}>
               <View style={styles.sheetBadge}>
-                <Text style={styles.sheetBadgeText}>{completed}/{MISSION_DATA.length}</Text>
+                <Text style={styles.sheetBadgeText}>{completedCount}/{tasksToDisplay.length}</Text>
               </View>
               <TouchableOpacity style={styles.sheetCloseBtn} onPress={onClose}>
                 <X size={16} stroke="#555" />
@@ -560,32 +593,84 @@ function MissionSheet({
             </View>
           </View>
 
+          {isTasksLoading && (
+            <View style={styles.tasksLoadingRow}>
+              <ActivityIndicator size="small" color="#2E7D32" style={{ marginRight: 8 }} />
+              <Text style={styles.tasksLoadingText}>Đang cập nhật nhiệm vụ mới nhất...</Text>
+            </View>
+          )}
+
           <ScrollView style={styles.sheetList} showsVerticalScrollIndicator={false}>
-            {MISSION_DATA.map((m, i) => (
-              <View key={`mission-row-${m.label}`} style={styles.missionRow}>
-                <View style={[styles.missionIconBox, { backgroundColor: missions[i] ? "#E8F5E9" : "#FFF8E1", borderColor: missions[i] ? "#A5D6A7" : "#FFD54F" }]}>
-                  {missions[i]
-                    ? <CheckCircle2 size={18} stroke="#2E7D32" />
-                    : <Star size={18} stroke="#FF8F00" />}
-                </View>
-                <View style={styles.missionInfo}>
-                  <Text style={styles.missionLabel}>{m.label}</Text>
-                  <Text style={styles.missionDesc}>{m.desc}</Text>
-                </View>
-                {missions[i] ? (
-                  <View style={styles.missionDoneTag}>
-                    <Text style={styles.missionDoneText}>Xong ✓</Text>
-                  </View>
-                ) : (
-                  <TouchableOpacity
-                    style={styles.missionClaimBtn}
-                    onPress={() => MISSION_DATA[i].reward === "seed" ? onExplore() : onClaim(i)}
+            {tasksToDisplay.map((m) => {
+              const isClaimed = m.status === "CLAIMED";
+              const isClaimable = m.status === "CLAIMABLE";
+              const isProgressTask = m.id === "view_products";
+
+              return (
+                <View key={`mission-row-${m.id}`} style={styles.missionRow}>
+                  <View
+                    style={[
+                      styles.missionIconBox,
+                      {
+                        backgroundColor: isClaimed ? "#E8F5E9" : isClaimable ? "#FFF8E1" : "#F5F5F5",
+                        borderColor: isClaimed ? "#A5D6A7" : isClaimable ? "#FFD54F" : "#E0E0E0",
+                      },
+                    ]}
                   >
-                    <Text style={styles.missionClaimText}>{MISSION_DATA[i].reward === "seed" ? "Khám phá" : "Nhận"}</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            ))}
+                    {isClaimed ? (
+                      <CheckCircle2 size={18} stroke="#2E7D32" />
+                    ) : (
+                      <Star size={18} stroke={isClaimable ? "#FF8F00" : "#9E9E9E"} />
+                    )}
+                  </View>
+                  <View style={styles.missionInfo}>
+                    <Text style={styles.missionLabel}>{m.label}</Text>
+                    <Text style={styles.missionDesc}>
+                      {m.desc}
+                      {isProgressTask && !isClaimed ? ` (${m.progress}/${m.target})` : ""}
+                    </Text>
+                  </View>
+
+                  {isClaimed ? (
+                    <View style={styles.missionDoneTag}>
+                      <Text style={styles.missionDoneText}>Xong ✓</Text>
+                    </View>
+                  ) : isClaimable ? (
+                    <TouchableOpacity
+                      style={[styles.missionClaimBtn, { backgroundColor: "#2E7D32" }]}
+                      disabled={claimingTaskId === m.id}
+                      onPress={() => onClaim(m.id)}
+                    >
+                      {claimingTaskId === m.id ? (
+                        <ActivityIndicator size="small" color="#fff" />
+                      ) : (
+                        <Text style={styles.missionClaimText}>Nhận</Text>
+                      )}
+                    </TouchableOpacity>
+                  ) : (
+                    <TouchableOpacity
+                      style={[
+                        styles.missionClaimBtn,
+                        {
+                          backgroundColor: "#F1F8E9",
+                          borderWidth: 1,
+                          borderColor: "#A5D6A7",
+                          paddingHorizontal: 10,
+                        },
+                      ]}
+                      onPress={() => onAction(m.id)}
+                    >
+                      <Text style={{ color: "#2E7D32", fontSize: 12, fontWeight: "700" }}>
+                        {m.id === "view_products" ? `${m.progress}/3 · Xem` :
+                         m.id === "like_post" ? "Tim bài" :
+                         m.id === "share_event" ? "Chia sẻ" :
+                         m.id === "community_explore" ? "Khám phá" : "Điểm danh"}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              );
+            })}
           </ScrollView>
 
           <View style={styles.sheetFooter}>
@@ -700,7 +785,14 @@ function SeedPickerModal({
               <TouchableOpacity key={seed.id} style={styles.seedPickerRow} onPress={() => onSelect(seed)}>
                 <Image source={seed.image} style={styles.seedPickerImage} />
                 <View style={styles.seedPickerInfo}>
-                  <Text style={styles.seedPickerName}>{seed.name}</Text>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <Text style={styles.seedPickerName}>{seed.name}</Text>
+                    {seed.quantity && seed.quantity > 1 ? (
+                      <View style={styles.seedQuantityBadge}>
+                        <Text style={styles.seedQuantityBadgeText}>x{seed.quantity}</Text>
+                      </View>
+                    ) : null}
+                  </View>
                   <Text style={styles.seedPickerPrice}>{seed.price}</Text>
                   <Text style={styles.seedPickerCare}>{seed.care}</Text>
                 </View>
@@ -738,12 +830,23 @@ function ClaimedVoucherCard({ stage }: { stage: StageKey }) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 type EventScreenProps = {
+  /** Tăng mỗi khi App.tsx navigate về EventScreen từ màn hình khác.
+   *  useEffect([refreshKey]) sẽ tự động fetch daily tasks mới nhất. */
+  refreshKey?: number;
   onOpenExplore?: () => void;
+  onOpenMall?: () => void;
+  onSelectProduct?: (product: Product) => void;
 };
 
-export default function EventScreen({ onOpenExplore }: EventScreenProps) {
+export default function EventScreen({
+  refreshKey = 0,
+  onOpenExplore,
+  onOpenMall,
+  onSelectProduct,
+}: EventScreenProps) {
   const { user } = useAuth();
   // ── State ──────────────────────────────────────────────────────────────────
+  const [isTasksLoading, setIsTasksLoading] = useState(false);
   const [stage, setStage] = useState<StageKey>(0);
   const [stageStartTime, setStageStartTime] = useState<number>(Date.now());
   const [timeReduced, setTimeReduced] = useState<number>(0);       // ms đã giảm
@@ -752,6 +855,8 @@ export default function EventScreen({ onOpenExplore }: EventScreenProps) {
   const [waterMax, setWaterMax] = useState(DEFAULT_WATER_MAX);
   const [fertMax, setFertMax] = useState(DEFAULT_FERT_MAX);
   const [missions, setMissions] = useState([false, false, false, false, false]);
+  const [dailyTasks, setDailyTasks] = useState<DailyTask[]>([]);
+  const [claimingTaskId, setClaimingTaskId] = useState<string | null>(null);
   const [claimedVouchers, setClaimedVouchers] = useState<StageKey[]>([]);
   const [pendingVoucherStage, setPendingVoucherStage] = useState<StageKey | null>(null);
   const [legacyResetConfirmStage, setLegacyResetConfirmStage] = useState<StageKey | null>(null);
@@ -760,6 +865,9 @@ export default function EventScreen({ onOpenExplore }: EventScreenProps) {
   const [remainingMs, setRemainingMs] = useState(STAGE_BASE_DURATION_MS);
   const [notifScheduledId, setNotifScheduledId] = useState<string | null>(null);
   const [selectedSeed, setSelectedSeed] = useState<Seed | null>(null);
+  const [unlockedSeeds, setUnlockedSeeds] = useState<Seed[]>([]);
+  const [seedInfo, setSeedInfo] = useState<Seed | null>(null);
+  const [seedPickerOpen, setSeedPickerOpen] = useState(false);
   const [harvestModalVisible, setHarvestModalVisible] = useState(false);
   const [harvestModalData, setHarvestModalData] = useState<{
     seedName: string;
@@ -773,6 +881,34 @@ export default function EventScreen({ onOpenExplore }: EventScreenProps) {
   const [sharingFeed, setSharingFeed] = useState(false);
   const progressLoadedRef = useRef(false);
   const progressApiAvailableRef = useRef(true);
+
+  // ── Tải kho hạt giống thực tế từ Database MySQL (Single Source of Truth) ─────
+  const fetchSeedInventory = useCallback(async () => {
+    if (!user?.id) return;
+    try {
+      const inv = await getSeedInventory();
+      const mapped: Seed[] = [];
+      for (const item of inv) {
+        if (item.quantity <= 0) continue;
+        const catalogSeed = SEED_DATA.find(s => s.id === item.seed_id);
+        if (catalogSeed) {
+          mapped.push({
+            ...catalogSeed,
+            quantity: item.quantity,
+          });
+        }
+      }
+      setUnlockedSeeds(mapped);
+    } catch (err) {
+      console.warn("Lỗi tải kho hạt giống từ Backend:", err);
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (user?.id) {
+      fetchSeedInventory();
+    }
+  }, [user?.id, refreshKey, fetchSeedInventory]);
 
   const saveProgress = useCallback(async (progress: {
     selectedSeed: Seed | null;
@@ -1046,82 +1182,142 @@ export default function EventScreen({ onOpenExplore }: EventScreenProps) {
     saveProgress({ selectedSeed, stage, stageStartTime, timeReduced: nextTimeReduced, waterTurns, fertTurns: nextFertTurns, waterMax, fertMax, missions, claimedVouchers, notifOn });
   }, [fertTurns, stage, timeReduced, selectedSeed, stageStartTime, waterTurns, waterMax, fertMax, missions, claimedVouchers, notifOn, saveProgress, syncStageProgress]);
 
-  // ── Handler: Nhận nhiệm vụ ────────────────────────────────────────────────
-  const handleClaimMission = useCallback((index: number) => {
-    if (missions[index]) return;
-    const nextMissions = [...missions];
-    nextMissions[index] = true;
-    setMissions(nextMissions);
-    const reward = MISSION_DATA[index].reward;
-    let nextWaterTurns = waterTurns;
-    let nextFertTurns = fertTurns;
-    let nextWaterMax = waterMax;
-    let nextFertMax = fertMax;
-    if (reward === "water") {
-      nextWaterTurns += 1;
-      nextWaterMax += 1;
-      setWaterTurns(nextWaterTurns);
-      setWaterMax(nextWaterMax);
-    } else if (reward === "fert") {
-      nextFertTurns += 1;
-      nextFertMax += 1;
-      setFertTurns(nextFertTurns);
-      setFertMax(nextFertMax);
-    }
-    saveProgress({ selectedSeed, stage, stageStartTime, timeReduced, waterTurns: nextWaterTurns, fertTurns: nextFertTurns, waterMax: nextWaterMax, fertMax: nextFertMax, missions: nextMissions, claimedVouchers, notifOn });
-  }, [missions, waterTurns, fertTurns, waterMax, fertMax, selectedSeed, stage, stageStartTime, timeReduced, claimedVouchers, notifOn, saveProgress]);
-
-  const handleExploreMission = useCallback(async () => {
-    if (missions[4]) return;
-
+  // ── Handler: Tải và Nhận nhiệm vụ hàng ngày (Backend là Single Source of Truth) ──
+  const fetchDailyTasks = useCallback(async (showLoading = false) => {
+    if (showLoading) setIsTasksLoading(true);
     try {
-      // Gọi backend để claim seed — backend kiểm tra giới hạn 1 lần/ngày (Asia/Ho_Chi_Minh)
-      const claimRes = await axiosClient.post("/api/game/claim-seed", { userId: user?.id });
-      const claimedSeed = claimRes.data?.seed;
-
-      const rewardSeed = claimedSeed
-        ? (SEED_DATA.find(s => s.id === claimedSeed.id) || SEED_DATA[Math.floor(Math.random() * SEED_DATA.length)])
-        : SEED_DATA[Math.floor(Math.random() * SEED_DATA.length)];
-
-      const nextMissions = [...missions];
-      nextMissions[4] = true;
-      setMissions(nextMissions);
-      setUnlockedSeeds(prev => prev.some(seed => seed.id === rewardSeed.id) ? prev : [...prev, rewardSeed]);
-      setMissionOpen(false);
-      saveProgress({ selectedSeed, stage, stageStartTime, timeReduced, waterTurns, fertTurns, waterMax, fertMax, missions: nextMissions, claimedVouchers, notifOn });
-
-      Alert.alert(
-        "Bạn nhận được hạt giống!",
-        `${rewardSeed.emoji} ${rewardSeed.name} đã được thêm vào khu vườn.`,
-        [{ text: "Khám phá ngay", onPress: onOpenExplore }, { text: "Để sau" }]
-      );
-    } catch (error) {
-      if (axios.isAxiosError(error) && error.response?.status === 400) {
-        // Backend từ chối: đã nhận hạt giống hôm nay
-        const msg = error.response.data?.message || "Bạn đã nhận hạt giống hôm nay rồi!";
-        Alert.alert("Không thể nhận hạt giống", msg);
-      } else if (axios.isAxiosError(error) && error.response?.status === 404) {
-        // API không tồn tại (legacy) — fallback xử lý locally
-        const rewardSeed = SEED_DATA[Math.floor(Math.random() * SEED_DATA.length)];
-        const nextMissions = [...missions];
-        nextMissions[4] = true;
-        setMissions(nextMissions);
-        setUnlockedSeeds(prev => prev.some(seed => seed.id === rewardSeed.id) ? prev : [...prev, rewardSeed]);
-        setMissionOpen(false);
-        saveProgress({ selectedSeed, stage, stageStartTime, timeReduced, waterTurns, fertTurns, waterMax, fertMax, missions: nextMissions, claimedVouchers, notifOn });
-        Alert.alert(
-          "Bạn nhận được hạt giống!",
-          `${rewardSeed.emoji} ${rewardSeed.name} đã được thêm vào khu vườn.`,
-          [{ text: "Khám phá ngay", onPress: onOpenExplore }, { text: "Để sau" }]
-        );
-      } else {
-        console.error("Lỗi nhận hạt giống:", error);
-        Alert.alert("Lỗi", "Không thể nhận hạt giống lúc này. Vui lòng thử lại.");
+      console.log("[DailyTasks] Refreshing...");
+      const res = await getDailyTasks();
+      if (res && Array.isArray(res.tasks)) {
+        console.log("[DailyTasks] Backend tasks:", res.tasks.map((t: DailyTask) => `${t.id}:${t.status}:${t.progress ?? '-'}`).join(" | "));
+        setDailyTasks(res.tasks);
       }
+    } catch (err) {
+      console.error("Failed to refresh daily tasks:", err);
+    } finally {
+      if (showLoading) setIsTasksLoading(false);
     }
-  }, [missions, user?.id, onOpenExplore, selectedSeed, stage, stageStartTime, timeReduced, waterTurns, fertTurns, waterMax, fertMax, claimedVouchers, notifOn, saveProgress]);
+  }, []);
 
-  const handleSelectSeed = useCallback((seed: Seed) => {
+  // Fetch daily tasks mỗi khi EventScreen được hiển thị (mount lần đầu) hoặc khi
+  // App.tsx tăng refreshKey (người dùng quay lại từ ProductDetail/Explore/...).
+  // EventScreen unmounts khi rời đi (switch screen) nên refreshKey=0 là mount lần đầu.
+  useEffect(() => {
+    if (!user?.id) return;
+    console.log("[DailyTasks] refreshKey changed:", refreshKey);
+    fetchDailyTasks();
+  }, [refreshKey, fetchDailyTasks, user?.id]);
+
+  // Refresh khi app từ background sang active (nhận thông báo, lock screen, ...)
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (nextState) => {
+      if (nextState === "active") {
+        console.log("[DailyTasks] App resumed from background – refreshing...");
+        fetchDailyTasks();
+      }
+    });
+    return () => subscription.remove();
+  }, [fetchDailyTasks]);
+
+  // Mở MissionSheet và lập tức lấy dữ liệu mới nhất từ backend
+  const handleOpenMissionSheet = useCallback(async () => {
+    setMissionOpen(true);
+    await fetchDailyTasks(true);
+  }, [fetchDailyTasks]);
+
+  // ── Handler: Nhận thưởng nhiệm vụ hàng ngày (Chỉ gọi khi Backend xác nhận CLAIMABLE) ──
+  const handleClaimDailyTask = useCallback(async (taskId: string) => {
+    if (claimingTaskId) return;
+    try {
+      setClaimingTaskId(taskId);
+      const res = await claimDailyTask(taskId);
+      if (res.success) {
+        if (res.updatedTurns) {
+          setWaterTurns(res.updatedTurns.water_turns);
+          setFertTurns(res.updatedTurns.fert_turns);
+          setWaterMax(res.updatedTurns.water_max);
+          setFertMax(res.updatedTurns.fert_max);
+        }
+        if (res.rewardSeed) {
+          await fetchSeedInventory();
+          Alert.alert(
+            "Bạn nhận được hạt giống!",
+            `${res.rewardSeed.emoji} ${res.rewardSeed.name} đã được thêm vào kho hạt giống.`,
+            [
+              { text: "Xem kho hạt giống", onPress: () => setSeedPickerOpen(true) },
+              { text: "Để sau" }
+            ]
+          );
+        } else {
+          const rewardText = res.reward?.type === "water" ? "+1 lượt Tưới nước 💧" : "+1 lượt Bón phân 🌿";
+          Alert.alert("Nhận thưởng thành công! 🎉", `Bạn đã nhận được ${rewardText}`);
+        }
+        await fetchDailyTasks();
+      }
+    } catch (error: any) {
+      const msg = error?.response?.data?.message || "Chưa thể nhận thưởng. Vui lòng kiểm tra lại điều kiện.";
+      Alert.alert("Thông báo", msg);
+      await fetchDailyTasks();
+    } finally {
+      setClaimingTaskId(null);
+    }
+  }, [claimingTaskId, fetchDailyTasks, onOpenExplore]);
+
+  // ── Handler: Chia sẻ sự kiện chuẩn qua Share API native của React Native ──
+  const handleShareEvent = useCallback(async () => {
+    try {
+      const result = await Share.share({
+        message: "🌿 Cùng tham gia sự kiện Nuôi Cây Ảo trên PlantApp để nhận nhiều voucher giảm giá và cây xanh tươi mát nhé! 🌱✨",
+        title: "Nuôi Cây Ảo - PlantApp",
+      });
+
+      if (result.action === Share.sharedAction) {
+        // Chỉ khi người dùng thực sự thực hiện chia sẻ thành công (không bị hủy)
+        try {
+          await recordEventShare();
+          await fetchDailyTasks();
+          Alert.alert(
+            "Chia sẻ thành công! 🎉",
+            "Nhiệm vụ 'Chia sẻ sự kiện' đã hoàn thành! Hãy bấm [Nhận] trong Nhiệm vụ hàng ngày để nhận +1 lượt Tưới nước 💧."
+          );
+        } catch (recordErr) {
+          console.warn("Lỗi ghi nhận chia sẻ:", recordErr);
+        }
+      }
+    } catch (error: any) {
+      console.warn("Lỗi khi mở chia sẻ:", error?.message);
+    }
+  }, [fetchDailyTasks]);
+
+  // ── Handler: Điều hướng làm nhiệm vụ (Không tự động phát thưởng) ──────────
+  const handleNavigateAction = useCallback(async (taskId: string) => {
+    setMissionOpen(false);
+    if (taskId === "view_products") {
+      if (onSelectProduct) {
+        try {
+          const prods = await getProducts();
+          if (prods && prods.length > 0) {
+            const currentViewTask = dailyTasks.find((t) => t.id === "view_products");
+            const currentProg = currentViewTask?.progress || 0;
+            const targetProd = prods[currentProg % prods.length];
+            onSelectProduct(targetProd);
+            return;
+          }
+        } catch (e) {
+          console.warn("Không thể tải sản phẩm cho nhiệm vụ xem:", e);
+        }
+      }
+      onOpenMall?.();
+    } else if (taskId === "like_post" || taskId === "community_explore") {
+      onOpenExplore?.();
+    } else if (taskId === "share_event") {
+      handleShareEvent();
+    } else if (taskId === "daily_login") {
+      checkInDailyTask().then(() => fetchDailyTasks()).catch(() => {});
+    }
+  }, [onOpenMall, onOpenExplore, onSelectProduct, handleShareEvent, fetchDailyTasks, dailyTasks]);
+
+  const handleSelectSeed = useCallback(async (seed: Seed) => {
     setSelectedSeed(seed);
     setStage(1);
     setStageStartTime(Date.now());
@@ -1129,10 +1325,14 @@ export default function EventScreen({ onOpenExplore }: EventScreenProps) {
     setRemainingMs(STAGE_BASE_DURATION_MS);
     setSeedPickerOpen(false);
     setSeedInfo(null);
-    // Xóa hạt giống đã trồng ra khỏi kho (mỗi hạt chỉ trồng 1 lần)
-    setUnlockedSeeds(prev => prev.filter(s => s.id !== seed.id));
+    try {
+      await consumeSeedInventory(seed.id);
+    } catch (err) {
+      console.warn("Lỗi khi tiêu hao hạt giống:", err);
+    }
+    await fetchSeedInventory();
     saveProgress({ selectedSeed: seed, stage: 1, stageStartTime: Date.now(), timeReduced: 0, waterTurns, fertTurns, waterMax, fertMax, missions, claimedVouchers, notifOn });
-  }, [waterTurns, fertTurns, waterMax, fertMax, missions, claimedVouchers, notifOn, saveProgress]);
+  }, [waterTurns, fertTurns, waterMax, fertMax, missions, claimedVouchers, notifOn, saveProgress, fetchSeedInventory]);
 
   const handleViewSeedInfo = useCallback((seed: Seed) => {
     setSeedPickerOpen(false);
@@ -1146,9 +1346,6 @@ export default function EventScreen({ onOpenExplore }: EventScreenProps) {
   const [loadingCoupons, setLoadingCoupons] = useState(false);
   const [loadingMyCoupons, setLoadingMyCoupons] = useState(false);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
-  const [unlockedSeeds, setUnlockedSeeds] = useState<Seed[]>([]);
-  const [seedInfo, setSeedInfo] = useState<Seed | null>(null);
-  const [seedPickerOpen, setSeedPickerOpen] = useState(false);
 
   useEffect(() => {
     if (activeSubTab !== "promotions") return;
@@ -1361,14 +1558,15 @@ export default function EventScreen({ onOpenExplore }: EventScreenProps) {
           category_tag: "Khoe cây 🌿",
         });
 
-        // Tự động nhận thưởng nhiệm vụ 3: "Chia sẻ sự kiện" (+1 lượt tưới) nếu chưa nhận
-        if (!missions[3]) {
-          handleClaimMission(3);
-        }
+        // Ghi nhận nhiệm vụ Chia sẻ sự kiện lên backend
+        try {
+          await recordEventShare();
+          await fetchDailyTasks();
+        } catch {}
 
         Alert.alert(
           "Khoe cây thành công! 🎉",
-          "Bài viết đã được đăng lên Feed Đánh giá (chuyên mục Khoe cây 🌿) và bạn đã được cộng thêm +1 lượt tưới nước 💧.",
+          "Bài viết đã được đăng lên Feed Đánh giá (chuyên mục Khoe cây 🌿). Nhiệm vụ Chia sẻ sự kiện đã hoàn thành, hãy vào Nhiệm vụ hàng ngày để bấm [Nhận] lượt tưới nước 💧.",
           [
             { text: "Ở lại", style: "cancel" },
             {
@@ -1387,7 +1585,7 @@ export default function EventScreen({ onOpenExplore }: EventScreenProps) {
         setSharingFeed(false);
       }
     },
-    [user, selectedSeed, stage, missions, handleClaimMission, onOpenExplore]
+    [user, selectedSeed, stage, fetchDailyTasks, onOpenExplore]
   );
 
   // ── Handler: Lưu cài đặt nhắc nhở tưới cây ─────────────────────────────────
@@ -1730,7 +1928,7 @@ export default function EventScreen({ onOpenExplore }: EventScreenProps) {
             {/* ── Missions Button ──────────────────────────────────────────────── */}
             <TouchableOpacity
               style={styles.missionBtn}
-              onPress={() => setMissionOpen(true)}
+              onPress={handleOpenMissionSheet}
               activeOpacity={0.85}
             >
               <View style={styles.missionBtnIcon}>
@@ -1739,13 +1937,17 @@ export default function EventScreen({ onOpenExplore }: EventScreenProps) {
               <View style={{ flex: 1 }}>
                 <Text style={styles.missionBtnTitle}>Nhiệm vụ hằng ngày</Text>
                 <Text style={styles.missionBtnSub}>
-                  {missions.filter(Boolean).length}/{MISSION_DATA.length} nhiệm vụ · Nhận thêm lượt tưới & bón
+                  {dailyTasks.filter((t) => t.status === "CLAIMED").length}/{dailyTasks.length || MISSION_DATA.length} nhiệm vụ · Nhận thêm lượt tưới & bón
                 </Text>
               </View>
               <View style={styles.missionDots}>
-                {MISSION_DATA.map((_, i) => (
-                  <View key={`mission-dot-${i}`} style={[styles.missionDot, { backgroundColor: missions[i] ? "#2E7D32" : "#E0E0E0" }]} />
-                ))}
+                {MISSION_DATA.map((m, i) => {
+                  const task = dailyTasks.find((t) => t.id === m.id);
+                  const isClaimed = task?.status === "CLAIMED";
+                  return (
+                    <View key={`mission-dot-${i}`} style={[styles.missionDot, { backgroundColor: isClaimed ? "#2E7D32" : "#E0E0E0" }]} />
+                  );
+                })}
               </View>
               <ChevronRight size={18} stroke="#A5D6A7" />
             </TouchableOpacity>
@@ -1942,10 +2144,12 @@ export default function EventScreen({ onOpenExplore }: EventScreenProps) {
       {/* ── Mission Sheet ───────────────────────────────────────────────────── */}
       <MissionSheet
         visible={missionOpen}
-        missions={missions}
+        dailyTasks={dailyTasks}
+        isTasksLoading={isTasksLoading}
         onClose={() => setMissionOpen(false)}
-        onClaim={handleClaimMission}
-        onExplore={handleExploreMission}
+        onClaim={handleClaimDailyTask}
+        onAction={handleNavigateAction}
+        claimingTaskId={claimingTaskId}
       />
       <SeedInfoModal
         seed={seedInfo}
@@ -2119,6 +2323,19 @@ const styles = StyleSheet.create({
   seedPickerImage: { width: 72, height: 64, borderRadius: 12, resizeMode: "cover" },
   seedPickerInfo: { flex: 1, marginLeft: 12 },
   seedPickerName: { color: "#1A2E1A", fontSize: 14, fontWeight: "800" },
+  seedQuantityBadge: {
+    backgroundColor: "#E8F5E9",
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderWidth: 1,
+    borderColor: "#A5D6A7",
+  },
+  seedQuantityBadgeText: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#2E7D32",
+  },
   seedPickerPrice: { color: "#2E7D32", fontSize: 13, fontWeight: "900", marginTop: 3 },
   seedPickerCare: { color: "#718071", fontSize: 10, marginTop: 3 },
   plantCard: {
@@ -2649,5 +2866,19 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 12,
     fontWeight: "700",
+  },
+  tasksLoadingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#E8F5E9",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#C8E6C9",
+  },
+  tasksLoadingText: {
+    fontSize: 12,
+    color: "#2E7D32",
+    fontWeight: "600",
   },
 });

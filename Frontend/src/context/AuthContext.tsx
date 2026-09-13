@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useRef, ReactNod
 import { AppState, AppStateStatus } from 'react-native';
 import { User } from '../types';
 import { setAuthToken } from '../api/axiosClient';
+import { checkInDailyTask } from '../services/dailyTaskService';
 import apiConfig from '../api.json';
 
 const BASE_URL = apiConfig.baseUrl || 'http://192.168.190.52:8080';
@@ -109,6 +110,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     tokenRef.current = newToken;
     // Bắt đầu heartbeat ngay sau khi đăng nhập
     startHeartbeat();
+    // Ghi nhận điểm danh nhiệm vụ đăng nhập mỗi ngày
+    checkInDailyTask().catch(() => {});
   };
 
   const logout = () => {

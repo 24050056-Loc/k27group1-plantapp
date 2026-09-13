@@ -6,6 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const jwt = require('jsonwebtoken');
 const authenticateToken = require('../middlewares/authMiddleware');
+const { recordPostLike } = require('../Controller/dailyTaskController');
 
 // =========================================================================
 // CẤU HÌNH MULTER LƯU ẢNH TRỰC TIẾP TRÊN SERVER LOCAL (uploads/posts)
@@ -530,6 +531,8 @@ router.post('/posts/:id/like', authenticateToken, async (req, res) => {
             await pool.query('INSERT INTO explore_likes (post_id, user_id) VALUES (?, ?)', [id, userId]);
             await pool.query('UPDATE explore_posts SET likes_count = likes_count + 1 WHERE id = ?', [id]);
             isLiked = true;
+            // Ghi nhận nhiệm vụ hàng ngày: Tim 1 bài viết bất kỳ
+            await recordPostLike(userId, id);
         }
 
         // Lấy lại số like mới nhất

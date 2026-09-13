@@ -64,11 +64,8 @@
       "favicon": "./assets/LogoPlantApp.png"
     },
     "extra": {
-      "router": {
-        "root": "app"
-      },
       "eas": {
-        "projectId": "fdf0b277-7f4f-4a92-bdef-66bbd1a38f47"
+        "projectId": "0e498792-15f6-4cdd-8cd6-ded9778729a5"
       }
     }
   }
